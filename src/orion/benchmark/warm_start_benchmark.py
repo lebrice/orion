@@ -35,8 +35,11 @@ class WarmStartBenchmark(Benchmark):
         algorithms: List[Union[str, Dict[str, Union[str, Dict]]]],
         targets: List[Union[TargetsDict, WarmStartTargetsDict]],
         knowledge_base_type: Type[AbstractKnowledgeBase],
+        storage: Dict = None,
     ):
-        super().__init__(name, algorithms, targets)
+        super().__init__(
+            name=name, algorithms=algorithms, targets=targets, storage=storage
+        )
         self.knowledge_base_type = knowledge_base_type
 
     def setup_studies(self):
