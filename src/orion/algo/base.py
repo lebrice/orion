@@ -12,6 +12,7 @@ import hashlib
 import logging
 from abc import ABCMeta, abstractmethod
 
+from typing import Dict
 from orion.algo.space import Fidelity
 from contextlib import contextmanager
 from orion.core.utils import Factory
@@ -323,9 +324,13 @@ class BaseAlgorithm(object, metaclass=ABCMeta):
 
         trial_id = self.get_id(point)
         return (
-            trial_id in self._trials_info and self._trials_info[trial_id][1] is not None
+            trial_id in self.trials_info and self.trials_info[trial_id][1] is not None
         )
 
+    @property
+    def trials_info(self) -> Dict[str, Dict]:
+        return self.unwrapped._trials_info
+    
     @property
     def unwrapped(self) -> "BaseAlgorithm":
         return self

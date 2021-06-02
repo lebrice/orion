@@ -100,7 +100,7 @@ class WarmStartStudy(Study):
             The seed to use for the sampling of the warm-starting points.
         """
         super().__init__(
-            benchmark=benchmark,
+            benchmark=benchmark,  # TODO: Remove this? Why would we pass the benchmark to its children (the studies)?
             algorithms=algorithms,
             assessment=assessment,
             task=target_task,
@@ -337,7 +337,7 @@ class WarmStartStudy(Study):
                 self.warm_start_experiments[algo_index].append(warm_start_experiment)
                 self.hot_start_experiments[algo_index].append(hot_start_experiment)
 
-    def execute(self):
+    def execute(self, n_workers: int = 1):
         """Execute all the experiments of the study"""
         # Actually fill the knowledge bases, by calling `workon` on the source
         # experiments, which are already registered in the corresponding knowledge base.
@@ -349,7 +349,9 @@ class WarmStartStudy(Study):
                     f"Sampling a maximum of {source_task.max_trials} trials for the "
                     f"dummy 'hot-start' experiment {dummy_experiment.name}"
                 )
-                dummy_experiment.workon(source_task, max_trials=source_task.max_trials)
+                dummy_experiment.workon(
+                    source_task, max_trials=source_task.max_trials, n_workers=n_workers
+                )
 
         for dummy_experiment in self.dummy_hot_experiments:
             # Use the same total number of points as warm-starting, but from the target
@@ -359,23 +361,43 @@ class WarmStartStudy(Study):
                 f"Sampling a maximum of {hot_start_trials} trials for the dummy "
                 f"'hot-start' experiment {dummy_experiment.name}"
             )
-            dummy_experiment.workon(self.target_task, max_trials=hot_start_trials)
+            dummy_experiment.workon(
+                self.target_task, max_trials=hot_start_trials, n_workers=n_workers
+            )
 
         # Run the main experiments:
-        for algo_index, algorithm in enumerate(self.algorithms):
+        for algo_index, algorithm_name in enumerate(self.algorithms):
             for run_id in range(self.repetitions):
+                
                 cold_start_exp = self.cold_start_experiments[algo_index][run_id]
                 warm_start_exp = self.warm_start_experiments[algo_index][run_id]
                 hot_start_exp = self.hot_start_experiments[algo_index][run_id]
                 # Actually run the cold / warm / hot experiments.
                 logger.info("Starting cold start experiment.")
-                cold_start_exp.workon(self.target_task, self.target_task.max_trials)
-
+                cold_start_exp.workon(
+                    self.target_task,
+                    max_trials=self.target_task.max_trials,
+                    n_workers=n_workers,
+                )
+                # BUG: Figure out why we observe '50' warm-start points, rather than 25.
+                warm_start_knowledge_base = self.warm_start_kbs[run_id]
+                assert warm_start_knowledge_base.n_stored_experiments == 1
                 logger.info("Starting warm start experiment.")
-                warm_start_exp.workon(self.target_task, self.target_task.max_trials)
+                warm_start_exp.workon(
+                    self.target_task,
+                    max_trials=self.target_task.max_trials,
+                    n_workers=n_workers,
+                )
+                
+                hot_start_knowledge_base = self.warm_start_kbs[run_id]
+                assert hot_start_knowledge_base.n_stored_experiments == 1
 
                 logger.info("Starting hot start experiment.")
-                hot_start_exp.workon(self.target_task, self.target_task.max_trials)
+                hot_start_exp.workon(
+                    self.target_task,
+                    max_trials=self.target_task.max_trials,
+                    n_workers=n_workers,
+                )
 
     def status(self):
         """Return status of the study"""
@@ -408,8 +430,8 @@ class WarmStartStudy(Study):
     def analysis(self):
         """Return assessment figure"""
         assert isinstance(self.assessment, WarmStartEfficiency)
-        experiment_infos = {}
-        for i, _ in enumerate(self.algorithms):
+        algo_name_to_experiments_dict: Dict[str, Tuple[List[ExperimentClient]]] = {}
+        for i, algo_name in enumerate(self.algorithms):
             tuples = list(
                 zip(
                     self.cold_start_experiments[i],
@@ -417,8 +439,10 @@ class WarmStartStudy(Study):
                     self.hot_start_experiments[i],
                 )
             )
-            experiment_infos[i] = tuples
-        return self.assessment.analysis(self.task_name, experiment_infos)
+            algo_name_to_experiments_dict[algo_name] = tuples
+        # FIXME: Patch this:
+        self.algo_name_to_experiments = algo_name_to_experiments_dict
+        return self.assessment.analysis(task_name=self.task_name, experiments=algo_name_to_experiments_dict)
 
     def __repr__(self):
         """Represent the object as a string."""

@@ -23,9 +23,8 @@ class WarmStartEfficiency(BaseAssess):
     TODO: Evaluate the 'warm start efficiency' (objective value) for each search algorithm
     at different time steps (trial number).
     """
-
-    def __init__(self, task_num: int = 1):
-        super().__init__(task_num=task_num)
+    def __init__(self, repetitions: int = 1):
+        super().__init__(repetitions)  # TODO: Rename `task_num` to `repetitions`
 
     def analysis(
         self, task: str, experiments: Dict[int, List[WarmStartExperimentsTuple]]
@@ -41,10 +40,11 @@ class WarmStartEfficiency(BaseAssess):
             run for this assessment, and experiment is an instance of
             `orion.core.worker.experiment.Experiment`.
         """
-
         # TODO: Reuse the figures form other Assessments, but group by cold/warm/hot in
         # addition to by algorithm
         all_plots = []
+        # Dictionary mapping from algorithm name to a dict mapping from algorithm stage
+        # (cold/warm/hot)
         experiments_dict: Dict[str, Dict[str, List[ExperimentClient]]] = {}
         for algo_index, list_of_exp_tuples in experiments.items():
 
@@ -55,7 +55,6 @@ class WarmStartEfficiency(BaseAssess):
                     algorithm_name = list(exp.configuration["algorithms"].keys())[0]
                     algo_experiments[stage].append(exp)
                     # figure_experiments_dict[stage].append(exp)
-
             experiments_dict[algorithm_name] = algo_experiments
 
             algo_regrets_plot = regrets(algo_experiments)

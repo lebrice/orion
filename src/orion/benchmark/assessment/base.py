@@ -23,7 +23,7 @@ class BaseAssess(ABC):
     """
 
     def __init__(self, task_num, **kwargs):
-        self.task_number = task_num
+        self.task_number = task_num  # TODO: Rename this to `repetitions` or something.
         self._param_names = kwargs
         self._param_names["task_num"] = task_num
 

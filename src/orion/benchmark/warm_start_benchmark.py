@@ -4,12 +4,15 @@
 import itertools
 import copy
 from typing import Dict, List, Type, Union
+from collections import defaultdict
 
 from orion.benchmark.assessment.base import BaseAssess
 from orion.benchmark.task.base import BaseTask
 from orion.core.worker.multi_task_algo import AbstractKnowledgeBase
+from orion.client import ExperimentClient
 
 from .assessment.warm_start_efficiency import WarmStartEfficiency
+from .assessment.warm_start_task_correlation import warm_start_task_correlation_figure
 from .benchmark import Benchmark
 from .study import Study
 from .warm_start_study import WarmStartStudy
@@ -33,48 +36,52 @@ class WarmStartBenchmark(Benchmark):
         self,
         name: str,
         algorithms: List[Union[str, Dict[str, Union[str, Dict]]]],
-        targets: List[Union[TargetsDict, WarmStartTargetsDict]],
+        source_tasks: List[BaseTask],
+        target_tasks: List[BaseTask],
         knowledge_base_type: Type[AbstractKnowledgeBase],
+        repetitions: int = 5,
         storage: Dict = None,
+        debug: bool = False,
     ):
-        super().__init__(
-            name=name, algorithms=algorithms, targets=targets, storage=storage
-        )
+        super().__init__(name=name, algorithms=algorithms, targets=[], storage=storage)
+        self.debug = debug
+        self.repetitions = repetitions
         self.knowledge_base_type = knowledge_base_type
+        self.source_tasks = source_tasks
+        self.target_tasks = target_tasks
+
+        # DIct mapping from algorithm name to a list of WarmStartStudies, one for each
+        # (source_task(s), target_task) pair.
+        # self.studies_dict: Dict[str, List[WarmStartStudy]] = {}
+        self.setup_studies()
 
     def setup_studies(self):
         """Setup studies to run for the benchmark.
         Benchmark `algorithms`, together with each `task` and `assessment` combination
         define a study.
         """
-        for target in self.targets:
-            if "task" in target:
-                assessments = target["assess"]
-                tasks = target["task"]
-                for assess, task in itertools.product(assessments, tasks):
-                    # TODO: This isn't great.
-                    study = Study(self, self.algorithms, assess, task,)
-                    study.setup_experiments()
-                    self.studies.append(study)
-            elif "source_tasks" in target:
-                assessments = target["assess"]
-                source_tasks: List[Union[BaseTask, List[BaseTask]]] = target["source_tasks"]
-                target_tasks = target["target_tasks"]
+        for source_tasks, target_task in zip(self.source_tasks, self.target_tasks):
+            assessment = WarmStartEfficiency(self.repetitions)
+            study = WarmStartStudy(
+                benchmark=self,  # TODO: remove `benchmark` arg to Study.
+                algorithms=self.algorithms,
+                assessment=assessment,
+                source_tasks=source_tasks,
+                target_task=target_task,
+                knowledge_base_type=self.knowledge_base_type,
+                warm_start_seed=123,  # TODO: Vary this?
+                debug=self.debug,
+            )
+            study.setup_experiments()
+            # if algorithm_name not in self.studies:
+            #     self.studies_dict[algorithm_name] = []
+            # self.studies_dict[algorithm_name].append(study)
+            self.studies.append(study)
 
-                for assessment in assessments:
-                    assert isinstance(assessment, WarmStartEfficiency)
-                    for source_task_or_tasks, target_task in zip(source_tasks, target_tasks):
-                        study = WarmStartStudy(
-                            benchmark=self,
-                            algorithms=self.algorithms,
-                            assessment=assessment,
-                            source_tasks=source_task_or_tasks,
-                            target_task=target_task,
-                            knowledge_base_type=self.knowledge_base_type,
-                            warm_start_seed=123,
-                        )
-                        study.setup_experiments()
-                        self.studies.append(study)
+    def process(self, n_workers=1):
+        """Run studies experiment"""
+        for study in self.studies:
+            study.execute(n_workers)
 
     @property
     def configuration(self) -> Dict:
@@ -84,41 +91,16 @@ class WarmStartBenchmark(Benchmark):
         config["name"] = self.name
         config["algorithms"] = self.algorithms
 
-        targets = []
-        for target in self.targets:
-            str_target = {}
-            assessments = target["assess"]
-            str_assessments = dict()
-            for assessment in assessments:
-                str_assessments.update(assessment.configuration)
-            str_target["assess"] = str_assessments
-
-            if "task" in target:
-                tasks = target["task"]
-                str_tasks = dict()
-                for task in tasks:
-                    str_tasks.update(task.configuration)
-                str_target["task"] = str_tasks
-            elif "source_tasks" in target:
-                source_tasks = target["source_tasks"]
-                task_configs = []
-                for task_or_tasks in source_tasks:
-                    if isinstance(task_or_tasks, list):
-                        task_configs.append([task.configuration for task in task_or_tasks])
-                    else:
-                        task_configs.append(task_or_tasks.configuration)
-                str_target["source_tasks"] = task_configs
-
-                target_tasks = target["target_tasks"]
-                task_configs = []
-                for task in target_tasks:
-                    task_configs.append(task.configuration)
-                str_target["target_tasks"] = task_configs
-            else:
-                raise NotImplementedError(target)
-
-        targets.append(str_target)
-        config["targets"] = targets
+        config["source_tasks"] = [
+            [task.to_dict() for task in source_tasks]
+            for source_tasks in self.source_tasks
+        ]
+        config["target_tasks"] = [
+            [task.to_dict() for task in source_tasks]
+            for source_tasks in self.source_tasks
+        ]
+        config["repetitions"] = self.repetitions
+        config["storage"] = self.storage_config
 
         if self.id is not None:
             config["_id"] = self.id
@@ -128,6 +110,82 @@ class WarmStartBenchmark(Benchmark):
     def analysis(self):
         """Return all the assessment figures"""
         figures = []
+        # TODO: Figure out a better place to call this! (Need to create a figure using
+        # the results of multiple studies).
+        assert all(isinstance(study, WarmStartStudy) for study in self.studies)
+
+        if all(
+            self.target_tasks[0] == target_task for target_task in self.target_tasks
+        ):
+            # WIP: If all the target tasks are the same, then add a figure that compares
+            # the warm-start efficiency vs the correlation between the source and target
+            # tasks.
+
+            target_task = self.target_tasks[0]
+            source_tasks = self.source_tasks
+            assert all(
+                isinstance(source_tasks, BaseTask) or len(source_tasks) == 1
+                for source_tasks in self.source_tasks
+            ), (
+                "can only create this figure if there is only one source task per "
+                "target task for now."
+            )
+            # Replace length-1 lists with their first item.
+            # TODO: For now (june 2) this is always just QuadraticsTasks.
+            source_tasks: List[BaseTask] = [
+                source_task_group[0]
+                if isinstance(source_task_group, list)
+                else source_task_group
+                for source_task_group in self.source_tasks
+            ]
+
+            assert len(self.source_tasks) == len(self.source_tasks) == len(self.studies)
+
+            # Re-order the keys of the multi-level dictionary:
+            # {
+            #     algo name -> {
+            #         task index -> [
+            #             list of [list of experiments
+            #                      (of len `self.repetitions`)]
+            #             (of len `len(self.target_tasks)`)]
+            #     }
+            # }
+            
+            cold_start_experiments: Dict[str, List[List[ExperimentClient]]] = defaultdict(list)
+            warm_start_experiments: Dict[
+                str, List[List[ExperimentClient]]
+            ] = defaultdict(list)
+            hot_start_experiments: Dict[
+                str, List[List[ExperimentClient]]
+            ] = defaultdict(list)
+
+            for task_index, study in enumerate(self.studies):
+                for algo_index, algo_name in enumerate(study.algorithms):
+                    cold_start_experiments[algo_name].append(
+                        study.cold_start_experiments[algo_index]
+                    )
+                    warm_start_experiments[algo_name].append(
+                        study.warm_start_experiments[algo_index]
+                    )
+                    hot_start_experiments[algo_name].append(
+                        study.hot_start_experiments[algo_index]
+                    )
+
+            assert set(cold_start_experiments.keys()) == set(self.algorithms)
+            assert set(warm_start_experiments.keys()) == set(self.algorithms)
+            assert set(hot_start_experiments.keys()) == set(self.algorithms)
+
+            for algo_name in self.algorithms:
+                task_correlation_figure = warm_start_task_correlation_figure(
+                    target_task=target_task,
+                    source_tasks=source_tasks,
+                    cold_start_experiments_per_task=cold_start_experiments[algo_name],
+                    warm_start_experiments_per_task=warm_start_experiments[algo_name],
+                    hot_start_experiments_per_task=hot_start_experiments[algo_name],
+                    algorithm_name=algo_name,
+                )
+                figures.append(task_correlation_figure)
+
         for study in self.studies:
             figure = study.analysis()
             if isinstance(figure, list):
