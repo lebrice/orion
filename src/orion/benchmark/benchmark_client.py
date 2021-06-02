@@ -161,7 +161,9 @@ def _create_benchmark(
         benchmark = WarmStartBenchmark(
             name=name,
             algorithms=algorithms,
-            targets=targets,
+            source_tasks=targets["source_tasks"],
+            target_tasks=targets["target_tasks"],
+            repetitions=5,
             storage=storage,
             knowledge_base_type=knowledge_base_type,
         )

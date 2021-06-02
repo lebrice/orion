@@ -76,6 +76,7 @@ class WarmStartStudy(Study):
         source_tasks: List[BaseTask],
         target_task: BaseTask,
         knowledge_base_type: Type[AbstractKnowledgeBase],
+        target_task_index: int,
         warm_start_seed: int = None,
         debug: bool = True,
     ):
@@ -111,6 +112,7 @@ class WarmStartStudy(Study):
         self.assessment: BaseAssess
         self.task: BaseTask
         self.benchmark: Benchmark
+        self.target_task_index = target_task_index
         self.assess_name = type(self.assessment).__name__
         self.task_name = type(self.task).__name__
         self.source_tasks: List[BaseTask]
@@ -187,6 +189,7 @@ class WarmStartStudy(Study):
                         self.benchmark.name,
                         self.assess_name,
                         source_task_name,
+                        f"task{self.target_task_index}",
                         str(task_repetition_index),
                         "dummy_warm",
                     ]
@@ -203,7 +206,7 @@ class WarmStartStudy(Study):
                     space=source_task.get_search_space(),
                     algorithms={"random": {"seed": seed}},
                     max_trials=source_task.max_trials,
-                    debug=True,
+                    debug=self.debug,
                 )
                 dummy_warm_start_experiments.append(dummy_warm_start_experiment)
                 warm_start_kb.add_experiment(dummy_warm_start_experiment)
@@ -220,7 +223,8 @@ class WarmStartStudy(Study):
                 [
                     self.benchmark.name,
                     self.assess_name,
-                    self.target_task_name,
+                    source_task_name,
+                    f"task{self.target_task_index}",
                     str(task_repetition_index),
                     "dummy_hot",
                 ]
@@ -231,7 +235,7 @@ class WarmStartStudy(Study):
                 space=self.target_task.get_search_space(),
                 algorithms={"random": {"seed": seed}},
                 max_trials=n_hot_start_trials,
-                debug=True,
+                debug=self.debug,
             )
             hot_start_kb.add_experiment(dummy_hot_start_experiment)
             assert hot_start_kb.n_stored_experiments == 1
@@ -293,8 +297,9 @@ class WarmStartStudy(Study):
                         self.benchmark.name,
                         self.assess_name,
                         target_task_name,
+                        f"task{self.target_task_index}",
                         str(repetition_id),
-                        str(algo_index),
+                        f"algo{algo_index}",
                     ]
                 )
 
@@ -347,7 +352,7 @@ class WarmStartStudy(Study):
             ):
                 logger.info(
                     f"Sampling a maximum of {source_task.max_trials} trials for the "
-                    f"dummy 'hot-start' experiment {dummy_experiment.name}"
+                    f"dummy 'warm-start' experiment {dummy_experiment.name}"
                 )
                 dummy_experiment.workon(
                     source_task, max_trials=source_task.max_trials, n_workers=n_workers
@@ -440,9 +445,9 @@ class WarmStartStudy(Study):
                 )
             )
             algo_name_to_experiments_dict[algo_name] = tuples
-        # FIXME: Patch this:
-        self.algo_name_to_experiments = algo_name_to_experiments_dict
-        return self.assessment.analysis(task_name=self.task_name, experiments=algo_name_to_experiments_dict)
+
+        task_string = str(self.target_task)
+        return self.assessment.analysis(task_string, experiments=algo_name_to_experiments_dict)
 
     def __repr__(self):
         """Represent the object as a string."""

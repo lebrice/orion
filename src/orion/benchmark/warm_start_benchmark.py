@@ -12,13 +12,13 @@ from orion.core.worker.multi_task_algo import AbstractKnowledgeBase
 from orion.client import ExperimentClient
 
 from .assessment.warm_start_efficiency import WarmStartEfficiency
-from .assessment.warm_start_task_correlation import warm_start_task_correlation_figure
+from .assessment.warm_start_task_correlation import warm_start_task_correlation_figure, _create_results_df
 from .benchmark import Benchmark
 from .study import Study
 from .warm_start_study import WarmStartStudy
 
 from typing_extensions import TypedDict, runtime_checkable, Protocol
-
+import pandas as pd
 
 class TargetsDict(TypedDict):
     assess: List[BaseAssess]
@@ -50,7 +50,7 @@ class WarmStartBenchmark(Benchmark):
         self.source_tasks = source_tasks
         self.target_tasks = target_tasks
 
-        # DIct mapping from algorithm name to a list of WarmStartStudies, one for each
+        # Dict mapping from algorithm name to a list of WarmStartStudies, one for each
         # (source_task(s), target_task) pair.
         # self.studies_dict: Dict[str, List[WarmStartStudy]] = {}
         self.setup_studies()
@@ -60,7 +60,9 @@ class WarmStartBenchmark(Benchmark):
         Benchmark `algorithms`, together with each `task` and `assessment` combination
         define a study.
         """
-        for source_tasks, target_task in zip(self.source_tasks, self.target_tasks):
+        for index, (source_tasks, target_task) in enumerate(
+            zip(self.source_tasks, self.target_tasks)
+        ):
             assessment = WarmStartEfficiency(self.repetitions)
             study = WarmStartStudy(
                 benchmark=self,  # TODO: remove `benchmark` arg to Study.
@@ -70,6 +72,7 @@ class WarmStartBenchmark(Benchmark):
                 target_task=target_task,
                 knowledge_base_type=self.knowledge_base_type,
                 warm_start_seed=123,  # TODO: Vary this?
+                target_task_index=index,
                 debug=self.debug,
             )
             study.setup_experiments()
@@ -174,17 +177,26 @@ class WarmStartBenchmark(Benchmark):
             assert set(cold_start_experiments.keys()) == set(self.algorithms)
             assert set(warm_start_experiments.keys()) == set(self.algorithms)
             assert set(hot_start_experiments.keys()) == set(self.algorithms)
-
+            result_dfs: Dict[str, pd.DataFrame] = {}
             for algo_name in self.algorithms:
-                task_correlation_figure = warm_start_task_correlation_figure(
+                # DEBUGGING: Why are the tasks always the same?
+                # assert False, cold_start_experiments[algo_name]
+                algo_results_df = _create_results_df(
                     target_task=target_task,
                     source_tasks=source_tasks,
                     cold_start_experiments_per_task=cold_start_experiments[algo_name],
                     warm_start_experiments_per_task=warm_start_experiments[algo_name],
                     hot_start_experiments_per_task=hot_start_experiments[algo_name],
+                )
+                result_dfs[algo_name] = algo_results_df
+                task_correlation_figure = warm_start_task_correlation_figure(
+                    df=algo_results_df,
                     algorithm_name=algo_name,
                 )
                 figures.append(task_correlation_figure)
+
+            self.results_df = pd.concat(result_dfs, names=["algorithm"])
+            return figures
 
         for study in self.studies:
             figure = study.analysis()

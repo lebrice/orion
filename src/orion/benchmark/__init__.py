@@ -13,3 +13,5 @@ from orion.client import create_experiment
 
 from .benchmark import Benchmark
 from .study import Study
+from .warm_start_benchmark import WarmStartBenchmark
+from .warm_start_study import WarmStartStudy
