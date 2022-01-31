@@ -1,3 +1,4 @@
+""" Wrapper around a task that fixes dimensions of it's space to the given values. """
 from typing import Dict, Any, List
 from orion.benchmark.task.task_wrapper import TaskWrapper, TaskType
 from orion.algo.space import Space
