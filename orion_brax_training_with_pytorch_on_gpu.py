@@ -10,6 +10,7 @@ Original file is located at
 
 Brax is ready to integrate into other research toolkits by way of the [OpenAI Gym](https://gym.openai.com/) interface.  Brax environments convert to Gym environments using either [GymWrapper](https://github.com/google/brax/blob/main/brax/envs/wrappers.py) for single environments, or [VectorGymWrapper](https://github.com/google/brax/blob/main/brax/envs/wrappers.py) for batched (parallelized) environments.
 """
+import itertools
 import os
 from re import L
 from typing_extensions import runtime_checkable
@@ -101,8 +102,11 @@ class StepData(NamedTuple):
     def slice(self, indices: Sequence[int]) -> "StepData":
         """Take a slice of all fields across the first dimension."""
         total_length = self.observation.shape[0]
-        mask = torch.zeros(total_length, dtype=torch.bool, device=self.device)
-        mask[indices] = True
+        index = torch.as_tensor(indices, dtype=torch.int64, device=self.device)
+
+        return self.map(lambda v: v.index_select(0, index=index))
+        # mask = torch.zeros(total_length, dtype=torch.bool, device=self.device)
+        # mask[indices] = True
         # NOTE: Moves the index tensor to the same device as v, in case there are different devices.
         return self.map(lambda v: v[mask.to(v.device)])
 
@@ -111,7 +115,7 @@ import random
 
 
 def batch_iter(
-    td: StepData, batch_size: int, shuffle: bool = True
+    td: StepData, batch_size: int, shuffle: bool = False
 ) -> Iterable[StepData]:
     """Creates a iterator that yields batches from `td`."""
     length = td.observation.shape[0]
@@ -208,12 +212,15 @@ class Agent(nn.Module):
 
     @torch.jit.export
     def update_normalization(self, observation: Tensor):
-        self.num_steps += observation.shape[0] * observation.shape[1]
+        # self.num_steps += observation.shape[0] * observation.shape[1]
+        self.num_steps += observation.shape[0]
         input_to_old_mean = observation - self.running_mean
-        mean_diff = torch.sum(input_to_old_mean / self.num_steps, dim=(0, 1))
+        # mean_diff = torch.sum(input_to_old_mean / self.num_steps, dim=(0, 1))
+        mean_diff = torch.sum(input_to_old_mean / self.num_steps, dim=0)
         self.running_mean = self.running_mean + mean_diff
         input_to_new_mean = observation - self.running_mean
-        var_diff = torch.sum(input_to_new_mean * input_to_old_mean, dim=(0, 1))
+        # var_diff = torch.sum(input_to_new_mean * input_to_old_mean, dim=(0, 1))
+        var_diff = torch.sum(input_to_new_mean * input_to_old_mean, dim=0)
         self.running_variance = self.running_variance + var_diff
 
     def normalize(self, observation: Tensor) -> Tensor:
@@ -272,8 +279,8 @@ class Agent(nn.Module):
 
     @torch.jit.export
     def loss(self, td: StepData) -> Tensor:
-        # TODO: Fix the issues that are arising with the last observation.
         observation = self.normalize(td.observation)
+
         policy_logits = self.policy(observation[:-1])
         baseline = self.value(observation)
         baseline = torch.squeeze(baseline, dim=-1)
@@ -287,7 +294,6 @@ class Agent(nn.Module):
         loc, scale = self.dist_create(td.logits)
         behaviour_action_log_probs = self.dist_log_prob(loc, scale, td.action)
         loc, scale = self.dist_create(policy_logits)
-        assert False, (loc.shape, scale.shape, td.action.shape)
         target_action_log_probs = self.dist_log_prob(loc, scale, td.action)
 
         with torch.no_grad():
@@ -335,7 +341,7 @@ def eval_unroll(agent: Agent, env: VectorEnv, length: int) -> Tuple[Tensor, Tens
     observation = env.reset()
     episodes = torch.zeros((), device=observation.device)
     episode_reward = torch.zeros((), device=observation.device)
-    for _ in range(length):
+    for _ in tqdm.tqdm(range(length), desc="eval_unroll", leave=False):
         action = agent(observation)
         observation, reward, done, _ = env.step(action)
         episodes += torch.sum(done)  # type: ignore
@@ -354,7 +360,7 @@ def train_unroll(
     unrolls: Dict[str, List[Tensor]] = collections.defaultdict(list)
     unrolls["observation"].append(observation)
 
-    for step in tqdm.tqdm(range(total_steps), desc="Train unroll"):
+    for step in tqdm.tqdm(range(total_steps), desc="Train unroll", leave=False):
         logits, action = agent.get_logits_action(observation)
         processed_action = Agent.dist_postprocess(action)
         observation, reward, done, info = env.step(processed_action)
@@ -478,25 +484,64 @@ def train(
         total_loss = 0
         t = time.time()
         for _ in range(num_epochs):
-            td = train_unroll(
-                agent=agent,
-                env=env,
-                total_steps=num_unrolls * unroll_length,
-            )
+            with torch.no_grad():
+                td = train_unroll(
+                    agent=agent,
+                    env=env,
+                    total_steps=num_unrolls * unroll_length,
+                )
             # NOTE: Values in td have shape (T, N_envs)
-            # Flatten the N 'envs' dimension:
+            # Flatten the N 'envs' dimension, preserving the sequential nature of the data.
+            # obs_e0_t0 = td.observation[0, 0]
+            # obs_e0_t1 = td.observation[1, 0]
+            # T = td.observation.shape[0]
+            # obs_e1_t0 = td.observation[0, 1]
+            # obs_e1_t1 = td.observation[1, 1]
             td = td.map(lambda v: v.swapaxes(0, 1).flatten(0, 1))
+            # Simple checks, uncomment if you want.
+            # assert (td.observation[0] == obs_e0_t0).all()
+            # assert (td.observation[1] == obs_e0_t1).all()
+            # assert (td.observation[T + 0] == obs_e1_t0).all()
+            # assert (td.observation[T + 1] == obs_e1_t1).all()
 
             # update normalization statistics
             agent.update_normalization(td.observation)
 
-            for _ in range(num_update_epochs):
-                # shuffle and batch the data
+            epoch_progress_bar = tqdm.tqdm(
+                range(num_update_epochs),
+                desc="Policy Training",
+                leave=False,
+                position=1,
+            )
 
-                for minibatch_i, td_minibatch in zip(
-                    range(num_minibatches),
-                    batch_iter(td, batch_size=batch_size, shuffle=True),
-                ):
+            for epoch in epoch_progress_bar:
+                # shuffle and batch the data
+                # NOTE: I don't know if shuffling makes sense here, since it looks like the ordering
+                # within each episode needs to be preserved...
+                batch_iterator: Iterable[StepData] = batch_iter(
+                    td, batch_size=batch_size + 1, shuffle=False
+                )
+                batch_iterator = itertools.islice(batch_iterator, num_minibatches)
+                batch_iterator = tqdm.tqdm(
+                    batch_iterator,
+                    desc=f"Train epoch {epoch}",
+                    leave=False,
+                    position=2,
+                    total=num_minibatches,
+                )
+                for td_minibatch in batch_iterator:
+                    # TODO: Fix the issues that are arising with the very last observation.
+                    # The problem is, I've simplified some stuff, e.g. the StepData has consistent first dim
+                    # now. This isn't exactly the same as they had it though.
+                    td_minibatch = StepData(
+                        observation=td_minibatch.observation,
+                        logits=td_minibatch.logits[:-1],
+                        action=td_minibatch.action[:-1],
+                        reward=td_minibatch.reward[:-1],
+                        done=td_minibatch.done[:-1],
+                        truncation=td_minibatch.truncation[:-1],
+                    )
+
                     loss = agent.loss(td_minibatch)
                     optimizer.zero_grad()
                     loss.backward()
