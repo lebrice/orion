@@ -12,18 +12,15 @@ Brax is ready to integrate into other research toolkits by way of the [OpenAI Gy
 """
 import itertools
 import os
-from re import L
-from typing_extensions import runtime_checkable
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "False"
 # @title Import Brax and some helper modules
 # from IPython.display import clear_output
 # !pip install --upgrade matplotlib
 import collections
-from datetime import datetime
-import functools
 import math
 import time
+from datetime import datetime
 from typing import (
     Any,
     Callable,
@@ -31,31 +28,21 @@ from typing import (
     Iterable,
     List,
     Optional,
-    Protocol,
     Sequence,
     Tuple,
     TypeVar,
-    Union,
 )
-from gym.vector import VectorEnv
 
-from torch import BoolTensor, Tensor
-import tqdm
-
-import brax
-from brax import envs
-from brax.envs import to_torch
-from brax.io import metrics
-from brax.training import ppo
-import gym
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch import nn
-from torch import optim
 import torch.nn.functional as F
-
-from orion.core.worker.trial import Trial
+import tqdm
+from brax import envs
+from brax.envs import to_torch
+from brax.training import ppo
+from gym.vector import VectorEnv
+from torch import Tensor, nn, optim
 
 # have torch allocate on device first, to prevent JAX from swallowing up all the
 # GPU memory. By default JAX will pre-allocate 90% of the available GPU memory:
@@ -64,8 +51,8 @@ v = torch.ones(1, device="cuda")
 
 """Here is a PPO Agent written in PyTorch:"""
 
-from typing import NamedTuple, Any
 from dataclasses import dataclass
+from typing import Any, NamedTuple
 
 T = TypeVar("T")
 
@@ -349,11 +336,7 @@ def eval_unroll(agent: Agent, env: VectorEnv, length: int) -> Tuple[Tensor, Tens
     return episodes, episode_reward / episodes
 
 
-def train_unroll(
-    agent: Agent,
-    env: VectorEnv,
-    total_steps: int,
-) -> StepData:
+def train_unroll(agent: Agent, env: VectorEnv, total_steps: int,) -> StepData:
     """Return step data over multiple unrolls."""
     # NOTE: Since this is a vectorenv, no need to reset later.
     observation = env.reset()
@@ -486,9 +469,7 @@ def train(
         for _ in range(num_epochs):
             with torch.no_grad():
                 td = train_unroll(
-                    agent=agent,
-                    env=env,
-                    total_steps=num_unrolls * unroll_length,
+                    agent=agent, env=env, total_steps=num_unrolls * unroll_length,
                 )
             # NOTE: Values in td have shape (T, N_envs)
             # Flatten the N 'envs' dimension, preserving the sequential nature of the data.
@@ -561,9 +542,9 @@ def train(
 We know we have a fair bit of headroom to improve the PyTorch implementation, as the built-in Brax trainer (which uses [flax.optim](https://flax.readthedocs.io/en/latest/flax.optim.html)) runs at nearly double the steps per second:
 """
 
-from simple_parsing.helpers.hparams import HyperParameters
-from simple_parsing.helpers.hparams import uniform, log_uniform
 from dataclasses import dataclass
+
+from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
 
 
 @dataclass
@@ -599,10 +580,7 @@ def run(hparams: HParams, use_pytorch: bool = True) -> float:
         pbar.update(num_steps - last_step)
         last_step = num_steps
         pbar.set_postfix(
-            {
-                "steps per second": train_sps[-1],
-                "reward": ydata[-1],
-            }
+            {"steps per second": train_sps[-1], "reward": ydata[-1],}
         )
         plt.xlim([0, total_steps])
         plt.ylim([0, 6000])
@@ -658,7 +636,7 @@ def run(hparams: HParams, use_pytorch: bool = True) -> float:
 
 
 def main():
-    from orion.client import build_experiment
+    pass
 
     # experiment = build_experiment(
     #     name="brax",
