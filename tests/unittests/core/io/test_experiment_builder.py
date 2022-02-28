@@ -605,7 +605,10 @@ class TestExperimentVersioning:
 
             new_algo = "gridsearch"
             with caplog.at_level(logging.WARNING):
-
+                _ = pytest.importorskip(
+                    "orion.algo.gradient_descent",
+                    reason="Needs the gradient descent example to be installed.",
+                )
                 exp = experiment_builder.build(
                     name=parent_version_config["name"], algorithms=new_algo
                 )
