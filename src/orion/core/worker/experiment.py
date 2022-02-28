@@ -7,12 +7,18 @@ Description of an optimization attempt
 Manage history of trials corresponding to a black box process.
 
 """
+from __future__ import annotations
 import contextlib
 import copy
 import datetime
 import inspect
 import logging
 from dataclasses import dataclass, field
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 import pandas
 
@@ -25,6 +31,7 @@ from orion.core.utils.singleton import update_singletons
 from orion.storage.base import FailedUpdate, get_storage
 
 log = logging.getLogger(__name__)
+Mode = Literal["r", "w", "x"]
 
 
 @dataclass
@@ -34,7 +41,7 @@ class ExperimentStats:
     ----------
     trials_completed : int
        Number of completed trials
-    best_trials_id : int
+    best_trials_id : str
        Unique identifier of the :class:`orion.core.worker.trial.Trial` object in the database
        which achieved the best known objective result.
     best_evaluation : float
@@ -48,11 +55,14 @@ class ExperimentStats:
     """
 
     trials_completed: int
-    best_trials_id: int
+    best_trials_id: str
     best_evaluation: float
-    start_time: datetime.datetime = field(default_factory=datetime.datetime)
-    finish_time: datetime.datetime = field(default_factory=datetime.datetime)
-    duration: datetime.timedelta = field(default_factory=datetime.timedelta)
+    start_time: datetime.datetime
+    finish_time: datetime.datetime
+    duration: datetime.timedelta = field(init=False)
+
+    def __post_init__(self):
+        self.duration = self.finish_time - self.start_time
 
 
 # pylint: disable=too-many-public-methods
@@ -131,7 +141,7 @@ class Experiment:
     )
     non_branching_attrs = ("max_trials", "max_broken")
 
-    def __init__(self, name, version=None, mode="r"):
+    def __init__(self, name: str, version: int | None = None, mode: Mode = "r"):
         self._id = None
         self.name = name
         self.version = version if version else 1
@@ -448,7 +458,7 @@ class Experiment:
 
         return getattr(self._storage, function)(self, *args, **kwargs)
 
-    def fetch_trials_by_status(self, status, with_evc_tree=False):
+    def fetch_trials_by_status(self, status, with_evc_tree=False) -> list[Trial]:
         """Fetch all trials with the given status
 
         Trials are sorted based on `Trial.submit_time`
@@ -609,7 +619,7 @@ class Experiment:
             best_evaluation=best_evaluation,
             start_time=start_time,
             finish_time=finish_time,
-            duration=duration,
+            # duration=duration,
         )
 
     def __repr__(self):

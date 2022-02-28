@@ -11,15 +11,20 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+from datetime import datetime
 import hashlib
 import logging
 import os
-from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, SupportsFloat
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, Literal, Sequence, SupportsFloat
+import typing
 
 import numpy as np
 from orion.core.utils.exceptions import InvalidResult
 from orion.core.utils.flatten import unflatten
+
+if typing.TYPE_CHECKING:
+    from orion.core.worker.experiment import Experiment
 
 log = logging.getLogger(__name__)
 
@@ -30,10 +35,7 @@ class AlreadyReleased(Exception):
     pass
 
 
-_Status = Literal["new", "reserved", "suspended", "completed", "interrupted", "broken"]
-
-
-def validate_status(status: _Status | None) -> None:
+def validate_status(status: Trial.Status | None) -> None:
     """
     Verify if given status is valid. Can be one of ``new``, ``reserved``, ``suspended``,
     ``completed``, ``interrupted``, or ``broken``.
@@ -44,6 +46,7 @@ def validate_status(status: _Status | None) -> None:
         )
 
 
+@dataclass
 class Trial:
     """Represents an entry in database/trials collection.
 
@@ -181,22 +184,22 @@ class Trial:
             "fidelity",
         )
 
-    __slots__ = (
-        "experiment",
-        "_id",
-        "_status",
-        "worker",
-        "_exp_working_dir",
-        "heartbeat",
-        "submit_time",
-        "start_time",
-        "end_time",
-        "_results",
-        "_params",
-        "parent",
-        "id_override",
-    )
-    allowed_stati = (
+    # __slots__ = (
+    #     "experiment",
+    #     "_id",
+    #     "_status",
+    #     "worker",
+    #     "_exp_working_dir",
+    #     "heartbeat",
+    #     "submit_time",
+    #     "start_time",
+    #     "end_time",
+    #     "_results",
+    #     "_params",
+    #     "parent",
+    #     "id_override",
+    # )
+    allowed_stati: ClassVar[tuple[str, ...]] = (
         "new",
         "reserved",
         "suspended",
@@ -205,31 +208,44 @@ class Trial:
         "broken",
     )
 
-    def __init__(self, **kwargs):
+    Status = Literal[
+        "new", "reserved", "suspended", "completed", "interrupted", "broken"
+    ]
+
+    experiment: Experiment | None = None
+    _id: str | None = field(default=None, repr=False)
+    status: Trial.Status = field(default="new", repr=True)
+    worker: Any | None = field(default=None, repr=False)  # note: Seems unused.
+    exp_working_dir: str | None = field(default=None, repr=False)
+    heartbeat: datetime | None = field(default=None, repr=False)
+    submit_time: datetime | None = field(default=None, repr=False)
+    start_time: datetime | None = field(default=None, repr=False)
+    end_time: datetime | None = field(default=None, repr=False)
+    results: list[Trial.Result] = dataclasses.field(default_factory=list, repr=False)
+    params: list[Trial.Param] = dataclasses.field(default_factory=list, repr=True)
+    parent: Trial | None = field(default=None, repr=False)
+    id_override: str | None = field(default=None, repr=False)
+
+    def __post_init__(self):
         """See attributes of `Trial` for meaning and possible arguments for `kwargs`."""
-        for attrname in self.__slots__:
-            if attrname in ("_results", "_params"):
-                setattr(self, attrname, list())
-            else:
-                setattr(self, attrname, None)
-
-        self.status = "new"
-
+        validate_status(self.status)
         # Store the id as an override to support different backends
-        self.id_override = kwargs.pop("_id", None)
+        if self.id_override is None:
+            self.id_override = self._id
 
-        for attrname, value in kwargs.items():
-            if attrname == "parents":
-                log.info("Trial.parents attribute is deprecated. Value is ignored.")
-            elif attrname == "results":
-                attr = getattr(self, attrname)
-                for item in value:
-                    attr.append(self.Result(**item))
-            elif attrname == "params":
-                for item in value:
-                    self._params.append(self.Param(**item))
-            else:
-                setattr(self, attrname, value)
+        if any(isinstance(result, dict) for result in self.results):
+            self.results = [
+                self.Result(**result) if isinstance(result, dict) else result
+                for result in self.results
+            ]
+        if self.results:
+            self.validate_results(self.results)
+
+        if any(isinstance(param, dict) for param in self.params):
+            self.params = [
+                self.Param(**param) if isinstance(param, dict) else param
+                for param in self.params
+            ]
 
     def branch(self, status="new", params=None):
         """Copy the trial and modify given attributes
@@ -291,27 +307,29 @@ class Trial:
 
         return trial_dictionary
 
-    def __str__(self):
-        """Represent partially with a string."""
-        return "Trial(experiment={0}, status={1}, params={2})".format(
-            repr(self.experiment), repr(self._status), self.format_params(self._params)
-        )
+    # def __str__(self):
+    #     """Represent partially with a string."""
+    #     return "Trial(experiment={0}, status={1}, params={2})".format(
+    #         repr(self.experiment), repr(self._status), self.format_params(self._params)
+    #     )
 
-    __repr__ = __str__
+    # __repr__ = __str__
 
-    @property
-    def params(self):
-        """Parameters of the trial"""
-        return unflatten({param.name: param.value for param in self._params})
+    # @property
+    # def params(self):
+    #     """Parameters of the trial"""
+    #     return unflatten({param.name: param.value for param in self._params})
 
-    @property
-    def results(self):
-        """List of results of the trial"""
-        return self._results
+    # @property
+    # def results(self):
+    #     """List of results of the trial"""
+    #     return self._results
 
-    @results.setter
-    def results(self, results):
-        """Verify results before setting the property"""
+    # @results.setter
+    # def results(self, results):
+    #     """Verify results before setting the property"""
+
+    def validate_results(self, results: Sequence[Trial.Result | dict]) -> None:
         objective = self._fetch_one_result_of_type("objective", results)
 
         if objective is None:
@@ -350,25 +368,25 @@ class Trial:
         """Return the current working directory of the trial."""
         return self.get_working_dir()
 
-    @property
-    def exp_working_dir(self):
-        """Return the current working directory of the experiment."""
-        return self._exp_working_dir
+    # @property
+    # def exp_working_dir(self):
+    #     """Return the current working directory of the experiment."""
+    #     return self._exp_working_dir
 
-    @exp_working_dir.setter
-    def exp_working_dir(self, value):
-        """Change the current base working directory of the trial."""
-        self._exp_working_dir = value
+    # @exp_working_dir.setter
+    # def exp_working_dir(self, value):
+    #     """Change the current base working directory of the trial."""
+    #     self._exp_working_dir = value
 
-    @property
-    def status(self):
-        """For meaning of property type, see `Trial.status`."""
-        return self._status
+    # @property
+    # def status(self):
+    #     """For meaning of property type, see `Trial.status`."""
+    #     return self._status
 
-    @status.setter
-    def status(self, status):
-        validate_status(status)
-        self._status = status
+    # @status.setter
+    # def status(self, status):
+    #     validate_status(status)
+    #     self._status = status
 
     @property
     def id(self):

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Collection of tests for :mod:`orion.core.cli.info`."""
+import datetime
 import itertools
 
 import pytest
-
 from orion.core.io.space_builder import SpaceBuilder
 from orion.core.utils.format_terminal import (
     format_algorithm,
@@ -569,9 +569,9 @@ def test_format_stats(dummy_trial):
         best_trials_id="dummy",
         trials_completed=10,
         best_evaluation=0.1,
-        start_time="yesterday",
-        finish_time="now",
-        duration="way too long",
+        start_time=datetime.datetime(2000, 12, 12),
+        finish_time=datetime.datetime(2000, 12, 20),
+        # duration=datetime.timedelta(days=8),
     )
     experiment.get_trial = lambda trial=None, uid=None: dummy_trial
     experiment.is_done = False
@@ -589,10 +589,9 @@ best trial:
     a: 0.0
     b: 1
     c: Some
-start time: yesterday
-finish time: now
-duration: way too long
-"""
+start time: datetime.datetime(2000, 12, 12)
+finish time: datetime.datetime(2000, 12, 20)
+duration: datetime.timedelta(days=8)"""
     )
 
 
@@ -654,7 +653,7 @@ def test_format_info(algorithm_dict, dummy_trial):
         best_evaluation=0.1,
         start_time="yesterday",
         finish_time="now",
-        duration="way too long",
+        # duration="way too long",
     )
     experiment.get_trial = lambda trial=None, uid=None: dummy_trial
     experiment.is_done = False
