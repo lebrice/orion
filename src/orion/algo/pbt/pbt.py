@@ -257,7 +257,11 @@ class PBT(BaseAlgorithm):
     @property
     def state_dict(self) -> dict:
         """Return a state dict that can be used to reset the state of the algorithm."""
+<<<<<<< HEAD
         state_dict: dict[str, Any] = super().state_dict
+=======
+        state_dict = super().state_dict
+>>>>>>> Remove outdated super(Type, self) syntax
         state_dict["random_search"] = self.random_search.state_dict
         state_dict["lineages"] = copy.deepcopy(self.lineages)
         state_dict["queue"] = copy.deepcopy(self._queue)

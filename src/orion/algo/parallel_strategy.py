@@ -294,7 +294,7 @@ class MeanParallelStrategy(ParallelStrategy):
 
     def lie(self, trial: Trial) -> Trial.Result | None:
         """See ParallelStrategy.lie"""
-        result = super(MeanParallelStrategy, self).lie(trial)
+        result = super().lie(trial)
         if result:
             return result
 

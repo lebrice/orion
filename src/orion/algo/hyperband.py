@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 A Novel Bandit-Based Approach to Hyperparameter Optimization
 ============================================================

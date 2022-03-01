@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Tree-structured Parzen Estimator Approach
 =========================================
