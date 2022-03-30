@@ -65,7 +65,7 @@ class RandomNudge(BaseAlgorithm):
 
         trials: list[Trial] = []
         for index in range(num):
-            noisy_guess = np.random.normal(
+            noisy_guess = self.rng.normal(
                 loc=best_trial_array,
                 scale=self.noise_variance,
             )
