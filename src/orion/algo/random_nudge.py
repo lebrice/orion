@@ -1,11 +1,19 @@
 from __future__ import annotations
-from orion.core.worker.trial import Trial
-from orion.algo.space import Space
-from orion.algo.base import BaseAlgorithm
+
+import sys
 from typing import Any, ClassVar
-from orion.core.utils import format_trials
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
+
 import numpy as np
-from typing import Literal
+
+from orion.algo.base import BaseAlgorithm
+from orion.algo.space import Space
+from orion.core.utils import format_trials
+from orion.core.worker.trial import Trial
 
 
 class RandomNudge(BaseAlgorithm):
@@ -14,9 +22,13 @@ class RandomNudge(BaseAlgorithm):
     Potential improvements:
     - Add a new parameter that sets a minimum number of random guesses to take before starting the
       greedy phase.
+    - Use a different noise value for each dimension of the search-space, maybe based on the
+      variance of the previous best trials in that dimension.
     - Reduce the "temperature" of the random guesses over time as more trials are observed
       (i.e. the noise variance).
     - Select the 'base' from the top-K best best trials, instead of only the best trial.
+    - When identifying a new "best trial", keep track of the difference between it and the previous,
+      use this as the "gradient", and do something cool with it, e.g. add a "momentum" term.
     """
 
     requires_type: ClassVar[Literal["real", "integer", "numerical", None]] = "real"
@@ -29,12 +41,14 @@ class RandomNudge(BaseAlgorithm):
         super().__init__(space)
         self.space: Space = space
         self.noise_variance = noise_variance
+        self.seed = seed
 
         self.best_trial: Trial | None = None
         self.best_objective: float | None = None
         self.rng = np.random.RandomState(seed)
 
     def seed_rng(self, seed: int | None):
+        self.seed = seed
         self.rng = np.random.RandomState(seed)
 
     def observe(self, trials: list[Trial]) -> None:
