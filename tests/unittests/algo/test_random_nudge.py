@@ -14,7 +14,6 @@ class TestRandomNudge(BaseAlgoTests):
     space: ClassVar[dict[str, str]] = {
         "x": "uniform(0, 1)",
         "y": "uniform(0, 1)",
-        "f": "fidelity(1, 10, base=2)",
     }
 
 
