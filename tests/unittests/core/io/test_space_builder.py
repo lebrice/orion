@@ -224,3 +224,19 @@ class TestSpaceBuilder(object):
         assert "a.x" in space
         assert "b.y" in space
         assert "b.z" in space
+
+
+def test_new_syntax():
+    """Test for cleaner syntax for creating spaces."""
+    from orion.algo.space import Space, Dimension, Integer, Real
+    from orion.core.io.space_builder import SpaceBuilder
+
+    space = Space(x=Integer(low=0, high=10), y=Real(low=0, high=1))
+    assert list(space.keys()) == ["x", "y"]
+    assert list(space.values()) == [
+        Integer(name="x", prior="uniform", low=0, high=10),
+        Real(name="y", prior="uniform", low=0, high=1),
+    ]
+    assert list(space) == ["x", "y"]
+    assert space["x"].interval() == (0, 10)
+    assert dict(zip(space, space.interval())) == {"x": (0, 10), "y": (0.0, 1.0)}

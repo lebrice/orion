@@ -28,9 +28,12 @@ scipy documentation for each specific implentation of a random variable type,
 unless noted otherwise!
 
 """
+from __future__ import annotations
+
 import copy
 import logging
 import numbers
+from typing import Dict
 
 import numpy
 from scipy.stats import distributions
@@ -381,7 +384,9 @@ class Real(Dimension):
 
     """
 
-    def __init__(self, name, prior, *args, **kwargs):
+    def __init__(
+        self, name: str | None = None, prior: str = "uniform", *args, **kwargs
+    ):
         self._low = kwargs.pop("low", -numpy.inf)
         self._high = kwargs.pop("high", numpy.inf)
         if self._high <= self._low:
@@ -953,7 +958,7 @@ class Fidelity(Dimension):
         return self.low <= value <= self.high
 
 
-class Space(dict):
+class Space(Dict[str, Dimension]):
     """Represents the search space.
 
     It is a sorted dictionary which contains `Dimension` objects.
@@ -962,9 +967,38 @@ class Space(dict):
 
     contains = Dimension
 
-    def register(self, dimension):
-        """Register a new dimension to `Space`."""
-        self[dimension.name] = dimension
+    def __init__(self, *args: Dimension | tuple[str, Dimension], **kwargs: Dimension):
+        """Initialize the search space.
+
+        Parameters
+        ----------
+        args : Dimension or tuple[str, Dimension]
+            The dimensions to be added to the search space.
+        kwargs : Dimension
+            The dimensions to be added to the search space.
+        """
+        super().__init__()
+        self.register(*args, **kwargs)
+
+    def register(
+        self,
+        *dimensions: Dimension | tuple[str, Dimension],
+        **name_to_dimension: Dimension,
+    ):
+        """Register one or more new dimensions to `Space`."""
+        # if dimension is not None:
+        #     self[dimension.name] = dimension
+        for dim_or_tuple in dimensions:
+            if isinstance(dim_or_tuple, tuple):
+                name, dimension = dim_or_tuple
+            else:
+                dimension = dim_or_tuple
+                name = dimension.name
+            self[name] = dimension
+        for name, dim in name_to_dimension.items():
+            named_dim = copy.deepcopy(dim) if dim.name != name else dim
+            named_dim.name = name
+            self[named_dim.name] = named_dim
 
     def sample(self, n_samples=1, seed=None):
         """Draw random samples from this space.
