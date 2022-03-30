@@ -79,6 +79,7 @@ class RandomNudge(BaseAlgorithm):
 
         return trials
 
+    @property
     def state_dict(self) -> dict:
         state: dict[str, Any] = super().state_dict
         state.update(
@@ -92,6 +93,7 @@ class RandomNudge(BaseAlgorithm):
         self.best_objective = state_dict["best_objective"]
         self.rng = state_dict["rng"]
 
+    @property
     def configuration(self) -> dict:
         self._param_names = ["noise_variance", "seed"]
         return super().configuration
