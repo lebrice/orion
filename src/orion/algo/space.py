@@ -28,12 +28,14 @@ scipy documentation for each specific implentation of a random variable type,
 unless noted otherwise!
 
 """
+from __future__ import annotations
+
 import copy
 import logging
 import numbers
-
 import numpy
 from scipy.stats import distributions
+from typing import Callable, Generic, TypeVar
 
 from orion.core.utils import float_to_digits_list, format_trials
 from orion.core.utils.flatten import flatten
@@ -67,7 +69,10 @@ class _Ellipsis:  # pylint:disable=too-few-public-methods
         return "..."
 
 
-class Dimension:
+T = TypeVar("T")
+
+
+class Dimension(Generic[T]):
     """Base class for search space dimensions.
 
     Attributes
@@ -87,7 +92,7 @@ class Dimension:
 
     NO_DEFAULT_VALUE = None
 
-    def __init__(self, name, prior, *args, **kwargs):
+    def __init__(self, name: str, prior, *args, **kwargs):
         """Init code which is common for `Dimension` subclasses.
 
         Parameters
@@ -126,6 +131,9 @@ class Dimension:
         self._default_value = kwargs.pop("default_value", self.NO_DEFAULT_VALUE)
         self._shape = kwargs.pop("shape", None)
         self.validate()
+
+        self.transform: Callable | None = None
+        self.reverse: Callable | None = None
 
     def validate(self):
         """Validate dimension arguments"""
@@ -1092,3 +1100,34 @@ class Space(dict):
         for dim in self.values():
             capacities *= dim.cardinality
         return capacities
+
+    def transform(self, trial):
+        """Transform a point that was in the original space to be in this one."""
+        transformed_point = tuple(
+            dim.transform(flatten(trial.params)[name]) for name, dim in self.items()
+        )
+
+        return change_trial_params(trial, transformed_point, self)
+
+    def reverse(self, transformed_trial):
+        """Reverses transformation so that a point from this `TransformedSpace`
+        to be in the original one.
+        """
+        reversed_point = tuple(
+            dim.reverse(flatten(transformed_trial.params)[name])
+            for name, dim in self.items()
+        )
+
+        return change_trial_params(
+            transformed_trial,
+            reversed_point,
+            self,
+        )
+
+
+def change_trial_params(trial, point, space):
+    """Convert params in Param objects and update trial"""
+    new_trial = copy.copy(trial)
+    # pylint: disable=protected-access
+    new_trial._params = format_trials.tuple_to_trial(point, space)._params
+    return new_trial

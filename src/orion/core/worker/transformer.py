@@ -7,11 +7,17 @@ Perform transformations on Dimensions
 Provide functions and classes to build a Space which an algorithm can operate on.
 
 """
+from __future__ import annotations
+
+from dataclasses import dataclass
+from multiprocessing.dummy import Array
+import operator
+from typing import Callable, ClassVar, List, Sequence, TypeVar, Union, Generic, cast
 import copy
 import functools
 import itertools
-from abc import ABCMeta, abstractmethod
-
+from abc import ABC, abstractmethod
+from typing_extensions import Protocol
 import numpy
 
 from orion.algo.space import Categorical, Dimension, Fidelity, Integer, Real, Space
@@ -21,9 +27,16 @@ from orion.core.utils.flatten import flatten
 NON_LINEAR = ["loguniform", "reciprocal"]
 
 
+T_in = TypeVar("T_in")
+T_out = TypeVar("T_out")
+D_in = TypeVar("D_in", bound=Dimension)
+D_out = TypeVar("D_out", bound=Dimension)
+
 # pylint: disable=unused-argument
 @functools.singledispatch
-def build_transform(dim, type_requirement, dist_requirement):
+def build_transform(
+    dim: Dimension, type_requirement: str | None, dist_requirement: str | None
+):
     """Base transformation factory
 
     Parameters
@@ -46,8 +59,31 @@ def build_transform(dim, type_requirement, dist_requirement):
     return []
 
 
-@build_transform.register(Categorical)
-def _(dim, type_requirement, dist_requirement):
+_transforms_mapping: dict[
+    tuple[type[Dimension], type[Dimension]], Callable[[Dimension], Dimension]
+] = {
+    (Categorical, Real): lambda dim: OneHotEncode(Enumerate(dim)),
+    (Categorical, Integer): Enumerate,
+}
+
+
+def register_transform(
+    in_type: type[D_in], out_type: type[D_out]
+) -> Callable[[Callable[[D_in], D_out]], Callable[[D_in], D_out]]:
+    """Register a transformation function for a given input and output type"""
+
+    def decorator(func: Callable[[D_in], D_out]) -> Callable[[D_in], D_out]:
+        """Decorator for registering a transformation function"""
+        _transforms_mapping[in_type, out_type] = func
+        return func
+
+    return decorator
+
+
+import inspect
+
+
+def _(dim: Dimension, type_requirement: dype[Dimension], dist_requirement: str):
     transformers = []
     if type_requirement == "real":
         transformers.extend(
@@ -103,7 +139,6 @@ def transform(original_space, type_requirement, dist_requirement):
                 transformer=Compose(transformers, dim.type), original_dimension=dim
             )
         )
-
     return space
 
 
@@ -169,7 +204,6 @@ def build_required_space(
         String defining the distribution requirement of the algorithm.
         - 'linear', any dimension with logarithmic prior while be linearized
         - None, no requirement
-
     """
     space = transform(original_space, type_requirement, dist_requirement)
     space = reshape(space, shape_requirement)
@@ -177,7 +211,21 @@ def build_required_space(
     return space
 
 
-class Transformer(object, metaclass=ABCMeta):
+class Transform(ABC, Generic[T_in, T_out]):
+    def __call__(self, input: ArrayLike[T_in]) -> ArrayLike[T_out]:
+        """Transform a point from domain dimension to the target dimension."""
+        return self.forward(input)
+
+    @abstractmethod
+    def forward(self, input: ArrayLike[T_in]) -> ArrayLike[T_out]:
+        """Transform a point from domain dimension to the target dimension."""
+
+    @abstractmethod
+    def reverse(self, output: ArrayLike[T_out]) -> ArrayLike[T_in]:
+        """Reverse transform a point from target dimension to the domain dimension."""
+
+
+class Transformer(Protocol[D_in, D_out]):
     """Define an (injective) function and its inverse. Base transformation class.
 
     Attributes
@@ -188,191 +236,81 @@ class Transformer(object, metaclass=ABCMeta):
     domain_type: str
         Is similar to ``target_type`` but it refers to the domain.
         If it is ``None``, then it can receive inputs of any type.
-
     """
 
-    domain_type = None
-    target_type = None
+    def __call__(self, dim: D_in) -> D_out:
+        """Transform a dimension.
 
-    @abstractmethod
-    def transform(self, point):
-        """Transform a point from domain dimension to the target dimension."""
-        pass
+        Parameters
+        ----------
+        dim: `orion.algo.space.Dimension`
+            Dimension to be transformed.
 
-    @abstractmethod
-    def reverse(self, transformed_point, index=None):
-        """Reverse transform a point from target dimension to the domain dimension."""
-        pass
+        Returns
+        -------
+        `orion.algo.space.Dimension`
+            Transformed dimension.
 
-    # pylint:disable=no-self-use
-    def infer_target_shape(self, shape):
-        """Return the shape of the dimension after transformation."""
-        return shape
-
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return "{}({})".format(self.__class__.__name__, what)
-
-    def _get_hashable_members(self):
-        return (self.__class__.__name__, self.domain_type, self.target_type)
-
-    # pylint:disable=protected-access
-    def __eq__(self, other):
-        """Return True if other is the same transformed dimension as self"""
-        if not isinstance(other, Transformer):
-            return False
-        return self._get_hashable_members() == other._get_hashable_members()
+        """
+        return dim.transform(self)
 
 
-class Identity(Transformer):
-    """Implement an identity transformation. Everything as it is."""
+def identity(dim: Dimension) -> Dimension:
+    """Identity transformer.
 
-    def __init__(self, domain_type=None):
-        self._domain_type = domain_type
+    Parameters
+    ----------
+    dim: `orion.algo.space.Dimension`
+        Dimension to be transformed.
 
-    @property
-    def first(self):
-        """Signals to ReshapedSpace whether this dimension should be used for `reverse`"""
-        return True
+    Returns
+    -------
+    `orion.algo.space.Dimension`
+        Transformed dimension.
 
-    def transform(self, point):
-        """Return `point` as it is."""
-        return point
-
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Return `transformed_point` as it is."""
-        if index is not None:
-            return transformed_point[index]
-        return transformed_point
-
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return what
-
-    @property
-    def domain_type(self):
-        """Return declared domain type on initialization."""
-        return self._domain_type
-
-    @property
-    def target_type(self):
-        """Return domain type as this will be the target in a identity transformation."""
-        return self.domain_type
+    """
+    return dim
 
 
-class Compose(Transformer):
+class Compose(List[Transform], Transform[T_in, T_out]):
     """Initialize composite transformer with a list of `Transformer` objects
     and domain type on which it will be applied.
     """
 
-    def __init__(self, transformers, base_domain_type=None):
-        try:
-            self.apply = transformers[-1]
-        except IndexError:
-            self.apply = Identity()
-        if len(transformers) > 1:
-            self.composition = Compose(transformers[:-1], base_domain_type)
-        else:
-            self.composition = Identity(base_domain_type)
-        assert (
-            self.apply.domain_type is None
-            or self.composition.target_type == self.apply.domain_type
-        )
-
-    def transform(self, point):
+    def __call__(self, input: T_in) -> T_out:
         """Apply transformers in the increasing order of the `transformers` list."""
-        point = self.composition.transform(point)
-        return self.apply.transform(point)
+        value = input
+        for func in self:
+            value = func(value)  # type: ignore
+        out = cast(T_out, value)
+        return out
 
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
+    def reverse(self, output: T_out) -> T_in:
         """Reverse transformation by reversing in the opposite order of the `transformers` list."""
-        transformed_point = self.apply.reverse(transformed_point)
-        return self.composition.reverse(transformed_point)
+        value = output
+        for transform in reversed(self):
+            value = transform.reverse(value)  # type: ignore
+        result = cast(T_in, value)
+        return result
 
-    def interval(self, alpha=1.0):
-        """Return interval of composed transformation."""
-        if hasattr(self.apply, "interval"):
-            return self.apply.interval(alpha)
+    # @property
+    # def domain_type(self):
+    #     """Return base domain type."""
+    #     return self[0].domain_type
 
-        return None
-
-    def infer_target_shape(self, shape):
-        """Return the shape of the dimension after transformation."""
-        shape = self.composition.infer_target_shape(shape)
-        return self.apply.infer_target_shape(shape)
-
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return self.apply.repr_format(self.composition.repr_format(what))
-
-    @property
-    def domain_type(self):
-        """Return base domain type."""
-        return self.composition.domain_type
-
-    @property
-    def target_type(self):
-        """Infer type of the tranformation target."""
-        type_before = self.composition.target_type
-        type_after = self.apply.target_type
-        return type_after if type_after else type_before
-
-    # pylint:disable=protected-access
-    def _get_hashable_members(self):
-        return (
-            (self.__class__.__name__,)
-            + self.apply._get_hashable_members()
-            + self.composition._get_hashable_members()
-        )
+    # @property
+    # def target_type(self):
+    #     """Infer type of the tranformation target."""
+    #     return self[-1].target_type
 
 
-class Reverse(Transformer):
-    """Apply the reverse transformation that another one would do."""
-
-    def __init__(self, transformer: Transformer):
-        assert not isinstance(
-            transformer, OneHotEncode
-        ), "real to categorical is pointless"
-        self.transformer = transformer
-
-    def transform(self, point):
-        """Use `reserve` of composed `transformer`."""
-        return self.transformer.reverse(point)
-
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Use `transform` of composed `transformer`."""
-        return self.transformer.transform(transformed_point)
-
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return "{}{}".format(
-            self.__class__.__name__, self.transformer.repr_format(what)
-        )
-
-    @property
-    def target_type(self):
-        """Return `domain_type` of composed `transformer`."""
-        return self.transformer.domain_type
-
-    @property
-    def domain_type(self):
-        """Return `target_type` of composed `transformer`."""
-        return self.transformer.target_type
-
-
-class Precision(Transformer):
+@dataclass
+class Precision(Transformer[Real, Real]):
     """Round real numbers to requested precision."""
 
-    domain_type = "real"
-    target_type = "real"
+    precision: int = 4
 
-    def __init__(self, precision=4):
-        self.precision = precision
-
-    def transform(self, point):
+    def forward(self, point: ArrayLike[float]) -> ArrayLike[float]:
         """Round `point` to the requested precision, as numpy arrays."""
         # numpy.format_float_scientific precision starts at 0
         if isinstance(point, (list, tuple)) or (
@@ -391,85 +329,81 @@ class Precision(Transformer):
 
         return numpy.asarray(point)
 
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Cast `transformed_point` to floats, as numpy arrays."""
-        return self.transform(transformed_point)
-
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return "{}({}, {})".format(self.__class__.__name__, self.precision, what)
+    def reverse(self, transformed_point: ArrayLike[float]) -> ArrayLike[float]:
+        """There isn't really a reverse in this case. We can't add more decimals out of nowhere).
+        We just return the same values.
+        """
+        return transformed_point
 
 
-class Quantize(Transformer):
-    """Transform real numbers to integers, violating injection."""
-
-    domain_type = "real"
-    target_type = "integer"
-
-    def transform(self, point):
-        """Round `point` and then cast to integers, as numpy arrays."""
-        quantized = numpy.round(numpy.asarray(point)).astype(int)
-
-        if numpy.any(numpy.isinf(point)):
-            isinf = int(numpy.isinf(point))
-            quantized = (
-                isinf * (quantized - 1) * int(numpy.sign(point))
-                + (1 - isinf) * (quantized - 1)
-            ).astype(int)
-
-        return quantized
-
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Cast `transformed_point` to floats, as numpy arrays."""
-        return numpy.asarray(transformed_point).astype(float)
+T = TypeVar("T")
+ArrayLike = Union[T, numpy.ndarray, Sequence[T]]
 
 
-class Enumerate(Transformer):
+def _quantize(point: ArrayLike[float]) -> ArrayLike[int]:
+    """Round `point` and then cast to integers, as numpy arrays."""
+    quantized = numpy.round(numpy.asarray(point)).astype(int)
+
+    if numpy.any(numpy.isinf(point)):
+        isinf = int(numpy.isinf(point))
+        quantized = (
+            isinf * (quantized - 1) * int(numpy.sign(point))
+            + (1 - isinf) * (quantized - 1)
+        ).astype(int)
+
+    return quantized
+
+
+def _reverse_quantize(transformed_point: ArrayLike[int]) -> ArrayLike[float]:
+    """Cast `transformed_point` to floats, as numpy arrays."""
+    return numpy.asarray(transformed_point).astype(float)
+
+
+def Quantize(dim: Real) -> Integer:
+    """Transform real numbers to integers. Isn't perfectly reversible."""
+    # todo:
+    lower = _quantize(dim.lower)
+    upper = _quantize(dim.upper)
+    out = Integer(name=dim.name, prior=dim.prior, lower=lower, upper=upper)
+    out.transform = _quantize
+    out.reverse = _reverse_quantize
+    return out
+
+
+def Enumerate(dim: Categorical) -> Integer:
     """Enumerate categories.
 
     Effectively transform from a list of objects to a range of integers.
     """
 
-    domain_type = "categorical"
-    target_type = "integer"
+    map_dict = {cat: i for i, cat in enumerate(dim.categories)}
+    _map = numpy.vectorize(lambda x: dim.categories[x], otypes=[object])
+    _imap = numpy.vectorize(lambda x: map_dict[x], otypes="i")
 
-    def __init__(self, categories):
-        self.categories = categories
-        map_dict = {cat: i for i, cat in enumerate(categories)}
-        self._map = numpy.vectorize(lambda x: map_dict[x], otypes="i")
-        self._imap = numpy.vectorize(lambda x: categories[x], otypes=[numpy.object])
-
-    def __deepcopy__(self, memo):
-        """Make a deepcopy"""
-        return type(self)(self.categories)
-
-    def transform(self, point):
-        """Return integers corresponding uniquely to the categories in `point`."""
-        return self._map(point)
-
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Return categories corresponding to their positions inside `transformed_point`."""
-        return self._imap(transformed_point)
-
-    # pylint:disable=unused-argument
-    def interval(self, alpha=1.0):
-        """Return the interval for the enumerated choices."""
-        return (0, len(self.categories) - 1)
+    # todo:
+    out = Integer(name=dim.name, low=0, high=len(dim.categories) - 1, prior=dim.prior)
+    out.transform = _map
+    out.reverse = _imap
+    return out
 
 
-class OneHotEncode(Transformer):
+@dataclass
+class OneHotEncode(Transformer[Integer, Real]):
     """Encode categories to a 1-hot integer space representation."""
 
-    domain_type = "integer"
-    target_type = "real"
+    num_cats: int
 
-    def __init__(self, bound: int):
-        self.num_cats = bound
+    domain_type: ClassVar[type[Integer]] = Integer
+    target_type: ClassVar[type[Real]] = Real
 
-    def transform(self, point):
+    def __call__(self, dim: Integer) -> Real:
+        out = Real(
+            name=dim.name, prior=dim.prior
+        )  # TODO: Pass all the right arguments.
+        out.transformer = self
+        return out
+
+    def forward(self, point: ArrayLike[int]) -> ArrayLike[float]:
         """Match a `point` containing integers to real vector representations of them.
 
         If the upper bound of integers supported by an instance of `OneHotEncode`
@@ -494,8 +428,7 @@ class OneHotEncode(Transformer):
         hot[grid + [point_]] = 1
         return hot
 
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
+    def reverse(self, transformed_point: ArrayLike[float]) -> ArrayLike[int]:
         """Match real vector representations to integers using an argmax function.
 
         If the number of dimensions is exactly 2, then use 0.5 as a decision boundary,
@@ -506,7 +439,6 @@ class OneHotEncode(Transformer):
         .. note:: This reverse transformation possibly removes the last tensor dimension
            from `transformed_point`.
         """
-
         point_ = numpy.asarray(transformed_point)
         if self.num_cats == 2:
             return (point_ > 0.5).astype(int)
@@ -516,57 +448,41 @@ class OneHotEncode(Transformer):
         assert point_.shape[-1] == self.num_cats
         return point_.argmax(axis=-1)
 
-    # pylint:disable=unused-argument
-    def interval(self, alpha=1.0):
-        """Return the interval for the one-hot encoding in proper shape."""
-        if self.num_cats == 2:
-            return 0, 1
-        else:
-            low = numpy.zeros(self.num_cats)
-            high = numpy.ones(self.num_cats)
 
-            return low, high
-
-    def infer_target_shape(self, shape):
-        """Infer that transformed points will have one more tensor dimension,
-        if the number of supported integers to transform is larger than 2.
-        """
-        return tuple(list(shape) + [self.num_cats]) if self.num_cats > 2 else shape
-
-    def _get_hashable_members(self):
-        return super(OneHotEncode, self)._get_hashable_members() + (self.num_cats,)
-
-
-class Linearize(Transformer):
+class Linearize(Transformer[Real, Real]):
     """Transform real numbers from loguniform to linear."""
 
-    domain_type = "real"
-    target_type = "real"
+    domain_type: ClassVar[type[Dimension]] = Real
+    target_type: ClassVar[type[Dimension]] = Real
 
-    def transform(self, point):
+    def __call__(self, dim: Real) -> Real:
+        lower = self.forward(dim.lower)
+        upper = self.forward(dim.upper)
+        out = Real(name=dim.name, lower=lower, upper=upper, prior="uniform")
+        out.transformer = self
+
+    def forward(self, point: ArrayLike[float]) -> ArrayLike[float]:
         """Linearize logarithmic distribution."""
         return numpy.log(numpy.asarray(point))
 
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
+    def reverse(self, transformed_point: ArrayLike[float]) -> ArrayLike[float]:
         """Turn linear distribution to logarithmic distribution."""
         return numpy.exp(numpy.asarray(transformed_point))
 
 
-class View(Transformer):
+ArrayDim = TypeVar("ArrayDim", Integer, Real)
+
+
+@dataclass
+class View(Transformer[ArrayDim, Union[Real, Integer]]):
     """Look-up single index in a dimensions with shape > 1"""
 
-    def __init__(self, shape, index, domain_type=None):
-        self.shape = shape
-        self.index = index
-        self._domain_type = domain_type
+    index: int
 
-    @property
-    def first(self):
-        """Signals to ReshapedSpace whether this dimension should be used for `reverse`"""
-        return sum(self.index) == 0
+    def __call__(self):
+        raise dimensions
 
-    def transform(self, point):
+    def forward(self, point: ArrayLike[T]) -> T:
         """Only return one element of the group"""
         return numpy.array(point)[self.index]
 
@@ -575,322 +491,27 @@ class View(Transformer):
         subset = transformed_point[index : index + numpy.prod(self.shape)]
         return numpy.array(subset).reshape(self.shape)
 
-    def interval(self, interval):
-        """Return corresponding view from interval"""
-        return (interval[0][self.index], interval[1][self.index])
 
-    @property
-    def domain_type(self):
-        """Return declared domain type on initialization."""
-        return self._domain_type
+@dataclass(frozen=True)
+class Reshape(Transformer[ArrayDim, ArrayDim]):
+    input_shape: tuple[int, ...]
+    output_shape: tuple[int, ...] = (1,)
 
-    @property
-    def target_type(self):
-        """Return domain type as this will be the target in flatten transformation."""
-        return self.domain_type
+    def __call__(self, dim: ArrayDim) -> ArrayDim:
+        # TODO:
+        lower = self.forward(dim.lower)
+        upper = self.forward(dim.upper)
+        reshaped_dim = type(dim)(lower=lower, upper=upper, shape=upper.shape)
+        return reshaped_dim
 
-    def repr_format(self, what):
-        """Format a string for calling ``__repr__`` in `TransformedDimension`."""
-        return "{}(shape={}, index={}, {})".format(
-            self.__class__.__name__, self.shape, self.index, what
-        )
+    def forward(self, point: ArrayLike) -> ArrayLike:
+        return numpy.array(point).reshape(self.output_shape)
 
+    def reverse(self, point: ArrayLike) -> ArrayLike:
+        return numpy.array(point).reshape(self.input_shape)
 
-class TransformedDimension(object):
-    """Duck-type :class:`orion.algo.space.Dimension` to mimic its functionality,
-    while transform automatically and appropriately an underlying
-    :class:`orion.algo.space.Dimension` object according to a `Transformer` object.
-    """
 
-    NO_DEFAULT_VALUE = Dimension.NO_DEFAULT_VALUE
-
-    def __init__(self, transformer, original_dimension):
-        self.original_dimension = original_dimension
-        self.transformer = transformer
-
-    def transform(self, point):
-        """Expose `Transformer.transform` interface from underlying instance."""
-        return self.transformer.transform(point)
-
-    # pylint:disable=unused-argument
-    def reverse(self, transformed_point, index=None):
-        """Expose `Transformer.reverse` interface from underlying instance."""
-        return self.transformer.reverse(transformed_point)
-
-    def interval(self, alpha=1.0):
-        """Map the interval bounds to the transformed ones."""
-        if hasattr(self.transformer, "interval"):
-            interval = self.transformer.interval()
-            if interval:
-                return interval
-        if self.original_dimension.type == "categorical":
-            return self.original_dimension.categories
-
-        low, high = self.original_dimension.interval(alpha)
-
-        return self.transform(low), self.transform(high)
-
-    def __contains__(self, point):
-        """Reverse transform and ask the original dimension if it is a possible
-        sample.
-        """
-        try:
-            orig_point = self.reverse(point)
-        except AssertionError:
-            return False
-        return orig_point in self.original_dimension
-
-    def __repr__(self):
-        """Represent the object as a string."""
-        return self.transformer.repr_format(repr(self.original_dimension))
-
-    # pylint:disable=protected-access
-    def __eq__(self, other):
-        """Return True if other is the same transformed dimension as self"""
-        if not (hasattr(other, "transformer") and hasattr(other, "original_dimension")):
-            return False
-
-        return (
-            self.transformer == other.transformer
-            and self.original_dimension == other.original_dimension
-        )
-
-    def __hash__(self):
-        """Hash of the transformed dimension"""
-        return hash(self._get_hashable_members())
-
-    # pylint:disable=protected-access
-    def _get_hashable_members(self):
-        """Hashable members of transformation and original dimension"""
-        return (
-            self.transformer._get_hashable_members()
-            + self.original_dimension._get_hashable_members()
-        )
-
-    def validate(self):
-        """Validate original_dimension"""
-        self.original_dimension.validate()
-
-    @property
-    def name(self):
-        """Do not change the name of the original dimension."""
-        return self.original_dimension.name
-
-    @property
-    def type(self):
-        """Ask transformer which is its target class."""
-        type_ = self.transformer.target_type
-        return type_ if type_ != "invariant" else self.original_dimension.type
-
-    @property
-    def prior_name(self):
-        """Do not change the prior name of the original dimension."""
-        return self.original_dimension.prior_name
-
-    @property
-    def shape(self):
-        """Wrap original shape with transformer, because it may have changed."""
-        return self.transformer.infer_target_shape(self.original_dimension.shape)
-
-    @property
-    def cardinality(self):
-        """Wrap original :class:`orion.algo.space.Dimension` capacity"""
-        # May be a discretized real, must reduce cardinality
-        if self.type == "integer":
-            return Integer.get_cardinality(self.shape, self.interval())
-
-        # Else we don't care what transformation is.
-        return self.original_dimension.cardinality
-
-    @property
-    def default_value(self):
-        """Return the default value for this dimensions"""
-        if (
-            self.original_dimension.default_value
-            is self.original_dimension.NO_DEFAULT_VALUE
-        ):
-            return self.NO_DEFAULT_VALUE
-
-        return self.transform(self.original_dimension.default_value)
-
-
-class ReshapedDimension(TransformedDimension):
-    """Duck-type :class:`orion.algo.space.Dimension` to mimic its functionality."""
-
-    def __init__(self, transformer, original_dimension, index, name=None):
-        super(ReshapedDimension, self).__init__(transformer, original_dimension)
-        if name is None:
-            name = original_dimension.name
-        self._name = name
-        self.index = index
-
-    @property
-    def first(self):
-        """Signals to ReshapedSpace whether this dimension should be used for `reverse`"""
-        return self.transformer.first
-
-    def transform(self, point):
-        """Expose `Transformer.transform` interface from underlying instance."""
-        return self.transformer.transform(point)
-
-    def reverse(self, transformed_point, index=None):
-        """Expose `Transformer.reverse` interface from underlying instance."""
-        return self.transformer.reverse(transformed_point, index)
-
-    def interval(self, alpha=1.0):
-        """Map the interval bounds to the transformed ones."""
-        interval = self.original_dimension.interval(alpha)
-        if hasattr(interval[0], "shape") and numpy.prod(interval[0].shape) > 1:
-            return self.transformer.interval(interval)
-
-        return interval
-
-    @property
-    def cardinality(self):
-        """Compute cardinality"""
-        cardinality = super(ReshapedDimension, self).cardinality
-        if isinstance(self.transformer, View):
-            cardinality /= numpy.prod(self.transformer.shape)
-
-        return cardinality
-
-    def cast(self, point):
-        """Cast a point according to original_dimension and then transform it"""
-        return self.original_dimension.cast(point)
-
-    @property
-    def shape(self):
-        """Shape is fixed to ()."""
-        return ()
-
-    @property
-    def name(self):
-        """Name of the view"""
-        return self._name
-
-
-class TransformedSpace(Space):
-    """Wrap the :class:`orion.algo.space.Space` to support transformation methods.
-
-    Parameter
-    ---------
-    space: `orion.algo.space.Space`
-       Original problem's definition of parameter space.
-
-    """
-
-    contains = TransformedDimension
-
-    def __init__(self, space, *args, **kwargs):
-        super(TransformedSpace, self).__init__(*args, **kwargs)
-        self._original_space = space
-
-    def transform(self, trial):
-        """Transform a point that was in the original space to be in this one."""
-        transformed_point = tuple(
-            dim.transform(flatten(trial.params)[name]) for name, dim in self.items()
-        )
-
-        return change_trial_params(trial, transformed_point, self)
-
-    def reverse(self, transformed_trial):
-        """Reverses transformation so that a point from this `TransformedSpace`
-        to be in the original one.
-        """
-        reversed_point = tuple(
-            dim.reverse(flatten(transformed_trial.params)[name])
-            for name, dim in self.items()
-        )
-
-        return change_trial_params(
-            transformed_trial,
-            reversed_point,
-            self,
-        )
-
-    def sample(self, n_samples=1, seed=None):
-        """Sample from the original dimension and forward transform them."""
-        trials = self._original_space.sample(n_samples=n_samples, seed=seed)
-        return [self.transform(trial) for trial in trials]
-
-
-class ReshapedSpace(Space):
-    """Wrap the `TransformedSpace` to support reshape methods.
-
-    Parameter
-    ---------
-    space: `orion.core.worker.TransformedSpace`
-       Transformed version of the orinigal problem's definition of parameter space.
-
-    """
-
-    contains = ReshapedDimension
-
-    def __init__(self, original_space, *args, **kwargs):
-        super(ReshapedSpace, self).__init__(*args, **kwargs)
-        self._original_space = original_space
-
-    @property
-    def original(self):
-        """Original space without reshape or transformations"""
-        return self._original_space
-
-    def transform(self, trial):
-        """Transform a point that was in the original space to be in this one."""
-        return self.reshape(self.original.transform(trial))
-
-    def reverse(self, transformed_trial):
-        """Reverses transformation so that a point from this `ReshapedSpace` to be in the original
-        one.
-        """
-        return self.original.reverse(self.restore_shape(transformed_trial))
-
-    def reshape(self, trial):
-        """Reshape the point"""
-        point = format_trials.trial_to_tuple(trial, self._original_space)
-        reshaped_point = []
-        for dim in self.values():
-            reshaped_point.append(dim.transform(point[dim.index]))
-
-        return change_trial_params(trial, reshaped_point, self)
-
-    def restore_shape(self, transformed_trial):
-        """Restore shape."""
-        transformed_point = format_trials.trial_to_tuple(transformed_trial, self)
-        original_keys = self._original_space.keys()
-        point = [None for _ in original_keys]
-        for index, dim in enumerate(self.values()):
-            if dim.first:
-                point_index = original_keys.index(dim.original_dimension.name)
-                point[point_index] = dim.reverse(transformed_point, index)
-
-        return change_trial_params(transformed_trial, point, self._original_space)
-
-    def sample(self, n_samples=1, seed=None):
-        """Sample from the original dimension and forward transform them."""
-        trials = self.original.sample(n_samples=n_samples, seed=seed)
-        return [self.reshape(trial) for trial in trials]
-
-    def __contains__(self, key_or_trial):
-        """Check whether `trial` is within the bounds of the space.
-        Or check if a name for a dimension is registered in this space.
-
-        Parameters
-        ----------
-        key_or_trial: str or `orion.core.worker.trial.Trial`
-            If str, test if the string is a dimension part of the search space.
-            If a Trial, test if trial's hyperparameters fit the current search space.
-
-        """
-        if isinstance(key_or_trial, str):
-            return super(ReshapedSpace, self).__contains__(key_or_trial)
-
-        return self.restore_shape(key_or_trial) in self.original
-
-    @property
-    def cardinality(self):
-        """Reshape does not affect cardinality"""
-        return self.original.cardinality
+TransformedSpace = Space
 
 
 def change_trial_params(trial, point, space):
