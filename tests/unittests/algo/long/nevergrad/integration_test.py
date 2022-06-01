@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-import nevergrad as ng
 import pytest
+
+pytest.importorskip("nevergrad", reason="nevergrad deps are not installed")
+import nevergrad
 from pytest import FixtureRequest, MarkDecorator
 
 from orion.algo.nevergradoptimizer import NOT_WORKING as NOT_WORKING_MODEL_NAMES
@@ -226,7 +228,7 @@ def _config(request: FixtureRequest):
     test_name = request.function.__name__
 
     model_name: str = request.param  # type: ignore
-    model_type = ng.optimizers.registry[model_name]
+    model_type = nevergrad.optimizers.registry[model_name]
 
     if model_name in NOT_WORKING:
         pytest.skip(reason=f"Model {model_name} is not supported.")

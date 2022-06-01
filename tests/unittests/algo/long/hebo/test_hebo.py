@@ -6,6 +6,8 @@ import typing
 from typing import ClassVar
 
 import pytest
+
+pytest.importorskip("hebo", reason="hebo deps not installed")
 from hebo.models.model_factory import model_dict
 from pymoo.factory import get_algorithm_options
 

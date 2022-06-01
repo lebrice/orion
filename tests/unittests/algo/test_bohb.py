@@ -5,7 +5,7 @@ from orion.algo.bohb import has_HpBandSter
 from orion.testing.algo import BaseAlgoTests
 
 if not has_HpBandSter:
-    pytest.skip("skipping BOHB tests", allow_module_level=True)
+    pytest.skip("BOHB dependencies are not installed", allow_module_level=True)
 
 N_INIT = 5
 

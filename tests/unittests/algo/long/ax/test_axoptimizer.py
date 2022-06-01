@@ -1,6 +1,8 @@
 """Perform integration tests for `orion.algo.ax`."""
+from __future__ import annotations
+
 import statistics as stats
-from typing import ClassVar, List
+from typing import ClassVar
 
 import pytest
 
@@ -10,7 +12,7 @@ from orion.core.utils import backward
 from orion.testing.algo import BaseAlgoTests, TestPhase, first_phase_only
 
 if not has_Ax:
-    pytest.skip("skipping Ax tests", allow_module_level=True)
+    pytest.skip("Ax dependencies are not installed", allow_module_level=True)
 else:
     import numpy
     from botorch.test_functions.multi_objective import BraninCurrin
@@ -69,7 +71,7 @@ class TestAxOptimizer(BaseAlgoTests):
         "extra_objectives": set(),
         "constraints": [],
     }
-    phases: ClassVar[List[TestPhase]] = [
+    phases: ClassVar[list[TestPhase]] = [
         TestPhase("Sobol", 0, "space.sample"),
         TestPhase("BO", N_INIT, "space.sample"),
     ]
