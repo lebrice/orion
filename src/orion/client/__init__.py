@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Python API
 ==========
@@ -6,9 +5,11 @@ Python API
 Provides functions for communicating with `orion.core`.
 
 """
-import logging
+from __future__ import annotations
 
-import orion.core.io.experiment_builder as experiment_builder
+import logging
+import typing
+
 from orion.client.cli import (
     interrupt_trial,
     report_bad_trial,
@@ -16,10 +17,18 @@ from orion.client.cli import (
     report_results,
 )
 from orion.client.experiment import ExperimentClient
+from orion.core.io import experiment_builder
 from orion.core.utils.exceptions import RaceCondition
 from orion.core.utils.singleton import update_singletons
 from orion.core.worker.producer import Producer
 from orion.storage.base import setup_storage
+
+if typing.TYPE_CHECKING:
+    from orion.algo.base import BaseAlgorithm
+    from orion.algo.space import Space
+    from orion.executor.base import BaseExecutor
+
+from orion.core import config as default_config
 
 __all__ = [
     "interrupt_trial",
@@ -46,20 +55,20 @@ def create_experiment(name, **config):
 
 # pylint: disable=too-many-arguments
 def build_experiment(
-    name,
-    version=None,
-    space=None,
-    algorithms=None,
-    strategy=None,
-    max_trials=None,
-    max_broken=None,
-    storage=None,
-    branching=None,
-    max_idle_time=None,
-    heartbeat=None,
-    working_dir=None,
-    debug=False,
-    executor=None,
+    name: str,
+    version: int | None = None,
+    space: Space | dict | None = None,
+    algorithms: type[BaseAlgorithm] | str | dict | None = None,
+    strategy: str | dict | None = None,
+    max_trials: int | None = None,
+    max_broken: int | None = None,
+    storage: dict | None = None,
+    working_dir: str | None = None,
+    max_idle_time: int | None = None,
+    heartbeat: int | None = default_config.worker.max_idle_time,
+    debug: bool = False,
+    branching: experiment_builder.BranchingConfig | None = None,
+    executor: BaseExecutor | None = None,
 ):
     """Build an experiment to be executable
 
@@ -75,9 +84,9 @@ def build_experiment(
     raised.
 
     All other arguments (``algorithms``, ``strategy``, ``max_trials``, ``storage``, ``branching``
-    and ``working_dir``) will be replaced by system's defaults if ommited. The system's defaults can
-    also be overriden in global configuration file as described for the database in
-    :ref:`Database Configuration`. We do not recommand overriding the algorithm configuration using
+    and ``working_dir``) will be replaced by system's defaults if omitted. The system's defaults
+    can also be overridden in global configuration file as described for the database in
+    :ref:`Database Configuration`. We do not recommend overriding the algorithm configuration using
     system's default, but overriding the storage configuration can be very convenient if the same
     storage is used for all your experiments.
 
@@ -119,67 +128,41 @@ def build_experiment(
 
     Parameters
     ----------
-    name: str
+    name:
         Name of the experiment
-    version: int, optional
+    version:
         Version of the experiment. Defaults to last existing version for a given ``name``
         or 1 for new experiment.
-    space: dict, optional
+    space:
         Optimization space of the algorithm. Should have the form ``dict(name='<prior>(args)')``.
-    algorithms: str or dict, optional
+    algorithms:
         Algorithm used for optimization.
-    strategy: str or dict, optional
+    strategy:
         Deprecated and will be remove in v0.4. It should now be set in algorithm configuration
         directly if it supports it.
-    max_trials: int, optional
+    max_trials:
         Maximum number or trials before the experiment is considered done.
-    max_broken: int, optional
+    max_broken:
         Number of broken trials for the experiment to be considered broken.
-    storage: dict, optional
+    storage:
         Configuration of the storage backend.
-    working_dir: str, optional
+    working_dir:
         Working directory created for the experiment inside which a unique folder will be created
         for each trial. Defaults to a temporary directory that is deleted at end of execution.
-    max_idle_time: int, optional
+    max_idle_time:
         Deprecated and will be removed in v0.3.0.
         Use experiment.workon(reservation_timeout) instead.
-    heartbeat: int, optional
+    heartbeat:
         Frequency (seconds) at which the heartbeat of the trial is updated.
         If the heartbeat of a `reserved` trial is larger than twice the configured
         heartbeat, Oríon will reset the status of the trial to `interrupted`.
         This allows restoring lost trials (ex: due to killed worker).
-        Defaults to ``orion.core.config.worker.max_idle_time``.
-    debug: bool, optional
-        If using in debug mode, the storage config is overrided with legacy:EphemeralDB.
-        Defaults to False.
-    branching: dict, optional
+    debug:
+        If set, the storage config is overridden with legacy:EphemeralDB.
+    branching:
         Arguments to control the branching.
-
-        branch_to: str, optional
-            Name of the experiment to branch to. The parent experiment will be the one specified by
-            ``(name, version)``, and the child will be ``(branch_to, 1)``.
-        branch_from: str, optional
-            Name of the experiment to branch from.
-            The parent experiment will be the one specified by
-            ``(branch_from, last version)``, and the child will be ``(name, 1)``.
-        manual_resolution: bool, optional
-            Starts the prompt to resolve manually the conflicts. Defaults to False.
-        algorithm_change: bool, optional
-            Whether to automatically solve the algorithm conflict (change of algo config).
-            Defaults to True.
-        orion_version_change: bool, optional
-            Whether to automatically solve the orion version conflict.
-            Defaults to True.
-        code_change_type: str, optional
-            How to resolve code change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
-        cli_change_type: str, optional
-            How to resolve cli change automatically. Must be one of 'noeffect', 'unsure' or 'break'.
-            Defaults to 'break'.
-        config_change_type: str, optional
-            How to resolve config change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
-    executor: `orion.executor.base.BaseExecutor`, optional
+        See ``orion.core.experiment.experiment_builder.BranchingConfig`` for more details.
+    executor:
         Executor to run the experiment
 
     Raises
@@ -190,9 +173,9 @@ def build_experiment(
     :class:`orion.core.utils.exceptions.NoConfigurationError`
         The experiment is not in database and no space is provided by the user.
     :class:`orion.core.utils.exceptions.RaceCondition`
-        There was a race condition during branching and new version cannot be infered because of
-        that. Single race conditions are normally handled seemlessly. If this error gets raised, it
-        means that different modifications occured during each race condition resolution. This is
+        There was a race condition during branching and new version cannot be inferred because of
+        that. Single race conditions are normally handled seamlessly. If this error gets raised, it
+        means that different modifications occurred during each race condition resolution. This is
         likely due to quick code change during experiment creation. Make sure your script is not
         generating files within your code repository.
     :class:`orion.core.utils.exceptions.BranchingEvent`
@@ -240,9 +223,9 @@ def build_experiment(
             )
         except RaceCondition as e:
             raise RaceCondition(
-                "There was a race condition during branching and new version cannot be infered "
-                "because of that. Single race conditions are normally handled seemlessly. If this "
-                "error gets raised, it means that different modifications occured during each race "
+                "There was a race condition during branching and new version cannot be inferred "
+                "because of that. Single race conditions are normally handled seamlessly. If this "
+                "error gets raised, it means that different modifications occurred during each race "
                 "condition resolution. This is likely due to quick code change during experiment "
                 "creation. Make sure your script is not generating files within your code "
                 "repository."
@@ -294,7 +277,7 @@ def workon(
     until `max_trials` is reached or the `algorithm` is done
     (some algorithms like random search are never done).
 
-    For informations on how to fetch results, see
+    For information on how to fetch results, see
     :py:class:`orion.client.experiment.ExperimentClient`.
 
     .. note::
