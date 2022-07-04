@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # pylint:disable=too-many-lines
 """
 Experiment wrapper client
@@ -6,14 +5,18 @@ Experiment wrapper client
 
 Wraps the core Experiment object to provide further functionalities for the user
 """
+from __future__ import annotations
+
 import inspect
 import logging
 from contextlib import contextmanager
+from typing import Generic
 
 import orion.core
 import orion.core.utils.format_trials as format_trials
 from orion.client.runner import Runner
 from orion.core.io.database import DuplicateKeyError
+from orion.core.io.experiment_builder import AlgoT
 from orion.core.utils.exceptions import (
     BrokenExperiment,
     CompletedExperiment,
@@ -22,10 +25,11 @@ from orion.core.utils.exceptions import (
     WaitingForTrials,
 )
 from orion.core.utils.working_dir import SetupWorkingDir
+from orion.core.worker.experiment import Experiment
 from orion.core.worker.producer import Producer
 from orion.core.worker.trial import AlreadyReleased, Trial, TrialCM
 from orion.core.worker.trial_pacemaker import TrialPacemaker
-from orion.executor.base import executor_factory
+from orion.executor.base import BaseExecutor, executor_factory
 from orion.plotting.base import PlotAccessor
 from orion.storage.base import FailedUpdate
 
@@ -70,7 +74,7 @@ def reserve_trial(experiment, producer, pool_size, timeout=None):
 
 
 # pylint: disable=too-many-public-methods
-class ExperimentClient:
+class ExperimentClient(Generic[AlgoT]):
     """ExperimentClient providing all functionalities for the python API
 
     Note that the ExperimentClient is not meant to be instantiated by the user.
@@ -82,7 +86,12 @@ class ExperimentClient:
         Experiment object serving for interaction with storage
     """
 
-    def __init__(self, experiment, executor=None, heartbeat=None):
+    def __init__(
+        self,
+        experiment: Experiment[AlgoT],
+        executor: BaseExecutor | None = None,
+        heartbeat: int | None = None,
+    ):
         self._experiment = experiment
         self._producer = Producer(experiment)
         self._pacemakers = {}
@@ -439,7 +448,7 @@ class ExperimentClient:
             return
         elif trial.status == "reserved" and trial.id not in self._pacemakers:
             raise RuntimeError(
-                "Trial {} is already reserved by another process.".format(trial.id)
+                f"Trial {trial.id} is already reserved by another process."
             )
         try:
             self._experiment.set_trial_status(
@@ -447,10 +456,8 @@ class ExperimentClient:
             )
         except FailedUpdate as e:
             if self.get_trial(trial) is None:
-                raise ValueError(
-                    "Trial {} does not exist in database.".format(trial.id)
-                ) from e
-            raise RuntimeError("Could not reserve trial {}.".format(trial.id)) from e
+                raise ValueError(f"Trial {trial.id} does not exist in database.") from e
+            raise RuntimeError(f"Could not reserve trial {trial.id}.") from e
 
         self._maintain_reservation(trial)
 
@@ -490,13 +497,11 @@ class ExperimentClient:
             self._producer.observe(trial)
         except FailedUpdate as e:
             if self.get_trial(trial) is None:
-                raise ValueError(
-                    "Trial {} does not exist in database.".format(trial.id)
-                ) from e
+                raise ValueError(f"Trial {trial.id} does not exist in database.") from e
             if current_status != "reserved":
                 raise_if_unreserved = False
                 raise AlreadyReleased(
-                    "Trial {} was already released locally.".format(trial.id)
+                    f"Trial {trial.id} was already released locally."
                 ) from e
 
             raise RuntimeError(
@@ -625,12 +630,10 @@ class ExperimentClient:
         except FailedUpdate as e:
             if self.get_trial(trial) is None:
                 raise_if_unreserved = False
-                raise ValueError(
-                    "Trial {} does not exist in database.".format(trial.id)
-                ) from e
+                raise ValueError(f"Trial {trial.id} does not exist in database.") from e
 
             raise RuntimeError(
-                "Reservation for trial {} has been lost.".format(trial.id)
+                f"Reservation for trial {trial.id} has been lost."
             ) from e
         finally:
             self._release_reservation(trial, raise_if_unreserved=raise_if_unreserved)
@@ -845,19 +848,17 @@ class ExperimentClient:
 
     def __repr__(self):
         """Represent the object as a string."""
-        return "Experiment(name=%s, version=%s)" % (self.name, self.version)
+        return f"Experiment(name={self.name}, version={self.version})"
 
     def _verify_reservation(self, trial):
         if trial.id not in self._pacemakers:
             raise RuntimeError(
-                "Trial {} had no pacemakers. Was it reserved properly?".format(trial.id)
+                f"Trial {trial.id} had no pacemakers. Was it reserved properly?"
             )
 
         if self.get_trial(trial).status != "reserved":
             self._release_reservation(trial)
-            raise RuntimeError(
-                "Reservation for trial {} has been lost.".format(trial.id)
-            )
+            raise RuntimeError(f"Reservation for trial {trial.id} has been lost.")
 
     def _maintain_reservation(self, trial):
         self._pacemakers[trial.id] = TrialPacemaker(trial)

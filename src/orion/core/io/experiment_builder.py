@@ -81,6 +81,7 @@ import getpass
 import logging
 import pprint
 import sys
+from dataclasses import field
 from typing import Any, TypeVar
 
 from typing_extensions import Literal, TypedDict
@@ -102,11 +103,48 @@ from orion.core.utils.exceptions import (
     NoNameError,
     RaceCondition,
 )
+from orion.core.utils.experiment_config import Config
 from orion.core.worker.experiment import Experiment
 from orion.core.worker.primary_algo import create_algo
-from orion.storage.base import get_storage, setup_storage
+from orion.storage.base import BaseStorageProtocol, get_storage, setup_storage
+
+Mode = Literal["r", "w", "x"]
+AlgoT = TypeVar("AlgoT", bound=BaseAlgorithm)
+
+from orion.core import config as default_config
 
 log = logging.getLogger(__name__)
+
+
+class BranchingConfig(Config):
+    """Configuration for branching an experiment."""
+
+    branch_from: str | None
+    """ Name of the experiment to branch from. """
+
+    manual_resolution: bool = False
+    """ Starts the prompt to resolve manually the conflicts. """
+
+    non_monitored_arguments: list[str] = field(default_factory=list)
+    """ Will ignore these arguments while looking for differences. Defaults to []. """
+
+    ignore_code_changes: bool = False
+    """ Will ignore code changes while looking for differences. """
+
+    algorithm_change: bool = True
+    """ Whether to automatically solve the algorithm conflict (change of algo config). """
+
+    orion_version_change: bool = True
+    """ Whether to automatically solve the orion version conflict. """
+
+    code_change_type: Literal["noeffect", "unsure", "break"] = "break"
+    """ How to resolve code change automatically. """
+
+    cli_change_type: Literal["noeffect", "unsure", "break"] = "break"
+    """ How to resolve cli change automatically. """
+
+    config_change_type: Literal["noeffect", "unsure", "break"] = "break"
+    """ How to resolve config change automatically. """
 
 
 ##
@@ -114,7 +152,18 @@ log = logging.getLogger(__name__)
 ##
 
 
-def build(name, version=None, branching=None, **config):
+def build(
+    name: str,
+    version: int | None = None,
+    space: dict | None = None,
+    algorithms: type[AlgoT] | str | dict[str, Any] | None = None,
+    strategy: str | dict | None = None,
+    max_trials: int | None = None,
+    max_broken: int | None = None,
+    storage: type[BaseStorageProtocol] | dict[str, Any] | None = None,
+    branching: dict | BranchingConfig | None = None,
+    **config,
+):
     """Build an experiment object
 
     If new, ``space`` argument must be provided, else all arguments are fetched from the database
@@ -124,56 +173,33 @@ def build(name, version=None, branching=None, **config):
 
     Parameters
     ----------
-    name: str
+    name:
         Name of the experiment to build
-    version: int, optional
+    version:
         Version to select. If None, last version will be selected. If version given is larger than
         largest version available, the largest version will be selected.
-    space: dict, optional
+    space:
         Optimization space of the algorithm. Should have the form ``dict(name='<prior>(args)')``.
-    algorithms: str or dict, optional
+    algorithms:
         Algorithm used for optimization.
-    strategy: str or dict, optional
+    strategy:
         Deprecated and will be remove in v0.4. It should now be set in algorithm configuration
         directly if it supports it.
-    max_trials: int, optional
+    max_trials:
         Maximum number of trials before the experiment is considered done.
-    max_broken: int, optional
+    max_broken:
         Number of broken trials for the experiment to be considered broken.
-    storage: dict, optional
+    storage:
         Configuration of the storage backend.
 
-    branching: dict, optional
+    branching:
         Arguments to control the branching.
-
-        branch_from: str, optional
-            Name of the experiment to branch from.
-        manual_resolution: bool, optional
-            Starts the prompt to resolve manually the conflicts. Defaults to False.
-        non_monitored_arguments: list of str, optional
-            Will ignore these arguments while looking for differences. Defaults to [].
-        ignore_code_changes: bool, optional
-            Will ignore code changes while looking for differences. Defaults to False.
-        algorithm_change: bool, optional
-            Whether to automatically solve the algorithm conflict (change of algo config).
-            Defaults to True.
-        orion_version_change: bool, optional
-            Whether to automatically solve the orion version conflict.
-            Defaults to True.
-        code_change_type: str, optional
-            How to resolve code change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
-        cli_change_type: str, optional
-            How to resolve cli change automatically. Must be one of 'noeffect', 'unsure' or 'break'.
-            Defaults to 'break'.
-        config_change_type: str, optional
-            How to resolve config change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
-
     """
     log.debug(f"Building experiment {name} with {version}")
     log.debug("    Passed experiment config:\n%s", pprint.pformat(config))
     log.debug("    Branching config:\n%s", pprint.pformat(branching))
+
+    # TODO: Untangle this, it's a bit of a mess. The `config` object is all-encompassing.
 
     name, config, branching = clean_config(name, config, branching)
 
@@ -221,7 +247,7 @@ def build(name, version=None, branching=None, **config):
     return experiment
 
 
-def clean_config(name, config, branching):
+def clean_config(name: str, config: dict, branching: dict | BranchingConfig | None):
     """Clean configuration from hidden fields (ex: ``_id``) and update branching if necessary"""
     log.debug("Cleaning config")
 
@@ -352,12 +378,6 @@ def load(name, version=None, mode="r"):
     db_config.setdefault("version", 1)
 
     return create_experiment(mode=mode, **db_config)
-
-
-Mode = Literal["r", "w", "x"]
-AlgoT = TypeVar("AlgoT", bound=BaseAlgorithm)
-
-from orion.core import config as default_config
 
 
 class RefersDict(TypedDict):

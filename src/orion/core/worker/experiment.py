@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # pylint:disable=protected-access,too-many-public-methods,too-many-lines
 """
 Description of an optimization attempt
@@ -13,9 +12,11 @@ import datetime
 import inspect
 import logging
 from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 
 import pandas
 
+from orion.algo.base import BaseAlgorithm
 from orion.core.evc.adapters import BaseAdapter
 from orion.core.evc.experiment import ExperimentNode
 from orion.core.io.database import DuplicateKeyError
@@ -25,6 +26,7 @@ from orion.core.utils.singleton import update_singletons
 from orion.storage.base import FailedUpdate, get_storage
 
 log = logging.getLogger(__name__)
+AlgoT = TypeVar("AlgoT", bound=BaseAlgorithm)
 
 
 @dataclass
@@ -56,7 +58,7 @@ class ExperimentStats:
 
 
 # pylint: disable=too-many-public-methods
-class Experiment:
+class Experiment(Generic[AlgoT]):
     """Represents an entry in database/experiments collection.
 
     Attributes
@@ -69,8 +71,8 @@ class Experiment:
     refers: dict or list of `Experiment` objects, after initialization is done.
        A dictionary pointing to a past `Experiment` id, ``refers[parent_id]``, whose
        trials we want to add in the history of completed trials we want to re-use.
-       For convenience and database effiency purpose, all experiments of a common tree shares
-       ``refers[root_id]``, with the root experiment refering to itself.
+       For convenience and database efficiency purpose, all experiments of a common tree shares
+       ``refers[root_id]``, with the root experiment referring to itself.
     version: int
         Current version of this experiment.
     metadata: dict
@@ -324,7 +326,7 @@ class Experiment:
             with_evc_tree=False, function="fetch_pending_trials"
         )
 
-        exp_trials_ids = set(trial.id for trial in exp_pending_trials)
+        exp_trials_ids = {trial.id for trial in exp_pending_trials}
 
         for trial in evc_pending_trials:
             if trial.id in exp_trials_ids:
@@ -612,7 +614,7 @@ class Experiment:
 
     def __repr__(self):
         """Represent the object as a string."""
-        return "Experiment(name=%s, metadata.user=%s, version=%s)" % (
+        return "Experiment(name={}, metadata.user={}, version={})".format(
             self.name,
             self.metadata.get("user", "n/a"),
             self.version,

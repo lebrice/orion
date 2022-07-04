@@ -27,6 +27,8 @@ if typing.TYPE_CHECKING:
     from orion.algo.base import BaseAlgorithm
     from orion.algo.space import Space
     from orion.executor.base import BaseExecutor
+    from orion.core.io.experiment_builder import AlgoT
+
 
 from orion.core import config as default_config
 
@@ -58,7 +60,7 @@ def build_experiment(
     name: str,
     version: int | None = None,
     space: Space | dict | None = None,
-    algorithms: type[BaseAlgorithm] | str | dict | None = None,
+    algorithms: type[AlgoT] | str | dict | None = None,
     strategy: str | dict | None = None,
     max_trials: int | None = None,
     max_broken: int | None = None,
@@ -69,7 +71,7 @@ def build_experiment(
     debug: bool = False,
     branching: experiment_builder.BranchingConfig | None = None,
     executor: BaseExecutor | None = None,
-):
+) -> ExperimentClient[AlgoT]:
     """Build an experiment to be executable
 
     Building the experiment can result in branching if there are any changes in the environment.
