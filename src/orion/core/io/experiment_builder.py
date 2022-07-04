@@ -9,7 +9,7 @@ configuration.
 The instantiation of an :class:`orion.core.worker.experiment.Experiment` is not a trivial process
 when the user request an experiment with specific options. One can easily create a new experiment
 with ``Experiment('some_experiment_name')``, but the configuration of a _writable_ experiment is
-less straighforward. This is because there is many sources of configuration and they have a strict
+less straightforward. This is because there is many sources of configuration and they have a strict
 hierarchy. From the more global to the more specific, there is:
 
 1. Global configuration:
@@ -81,12 +81,15 @@ import getpass
 import logging
 import pprint
 import sys
+from typing import Any, TypeVar
+
+from typing_extensions import Literal, TypedDict
 
 import orion.core
 import orion.core.utils.backward as backward
 from orion.algo.base import BaseAlgorithm, algo_factory
 from orion.algo.space import Space
-from orion.core.evc.adapters import BaseAdapter
+from orion.core.evc.adapters import BaseAdapter, CompositeAdapter
 from orion.core.evc.conflicts import ExperimentNameConflict, detect_conflicts
 from orion.core.io import resolve_config
 from orion.core.io.database import DuplicateKeyError
@@ -178,7 +181,7 @@ def build(name, version=None, branching=None, **config):
 
     if "space" not in config:
         raise NoConfigurationError(
-            "Experiment {} does not exist in DB and space was not defined.".format(name)
+            f"Experiment {name} does not exist in DB and space was not defined."
         )
 
     if len(config["space"]) == 0:
@@ -351,66 +354,95 @@ def load(name, version=None, mode="r"):
     return create_experiment(mode=mode, **db_config)
 
 
-def create_experiment(name, version, mode, space, **kwargs):
+Mode = Literal["r", "w", "x"]
+AlgoT = TypeVar("AlgoT", bound=BaseAlgorithm)
+
+from orion.core import config as default_config
+
+
+class RefersDict(TypedDict):
+    parent_id: str | int | None
+    root_id: str | int | None
+    adapter: list | CompositeAdapter
+
+
+def create_experiment(
+    name: str,
+    version: int,
+    mode: Mode,
+    space: Space | dict[str, Any],
+    algorithms: type[AlgoT] | str | dict[str, Any] | None = None,
+    strategy: str | dict | None = None,
+    max_trials: int | None = default_config.experiment.max_trials,
+    max_broken: int | None = default_config.experiment.max_broken,
+    storage: dict | None = None,
+    _id: int | str | None = None,
+    producer: dict | None = None,
+    working_dir: str | None = default_config.experiment.working_dir,
+    metadata: dict | None = None,
+    user: str | None = None,
+    refers: RefersDict | None = None,
+    **ignored_kwargs,
+):
     """Instantiate the experiment and its attribute objects
 
     All unspecified arguments will be replaced by system's defaults (orion.core.config.*).
 
     Parameters
     ----------
-    name: str
+    name:
         Name of the experiment.
-    version: int
+    version:
         Version of the experiment.
-    mode: str
+    mode:
         The access rights of the experiment on the database.
         'r': read access only
         'w': can read and write to database
         'x': can read and write to database, algo is instantiated and can execute optimization
-    space: dict or Space object
+    space:
         Optimization space of the algorithm. If dict, should have the form
         `dict(name='<prior>(args)')`.
-    algorithms: str or dict, optional
+    algorithms:
         Algorithm used for optimization.
-    strategy: str or dict, optional
+    strategy:
         Parallel strategy to use to parallelize the algorithm.
-    max_trials: int, optional
+    max_trials:
         Maximum number or trials before the experiment is considered done.
-    max_broken: int, optional
+    max_broken:
         Number of broken trials for the experiment to be considered broken.
-    storage: dict, optional
+    storage:
         Configuration of the storage backend.
 
     """
-    experiment = Experiment(name=name, version=version, mode=mode)
-    experiment._id = kwargs.get("_id", None)  # pylint:disable=protected-access
-    experiment.max_trials = kwargs.get(
-        "max_trials", orion.core.config.experiment.max_trials
+    experiment = Experiment(
+        name=name,
+        version=version,
+        mode=mode,
     )
-    experiment.max_broken = kwargs.get(
-        "max_broken", orion.core.config.experiment.max_broken
-    )
+    experiment._id = _id  # pylint:disable=protected-access
+    experiment.max_trials = max_trials
+    experiment.max_broken = max_broken
     experiment.space = _instantiate_space(space)
     experiment.algorithms = _instantiate_algo(
         experiment.space,
-        experiment.max_trials,
-        kwargs.get("algorithms"),
+        max_trials=experiment.max_trials,
+        config=algorithms,
         ignore_unavailable=mode != "x",
     )
+    experiment.working_dir = working_dir
     # TODO: Remove for v0.4
-    _instantiate_strategy(kwargs.get("producer", {}).get("strategy"))
-    experiment.working_dir = kwargs.get(
-        "working_dir", orion.core.config.experiment.working_dir
-    )
-    experiment.metadata = kwargs.get(
-        "metadata", {"user": kwargs.get("user", getpass.getuser())}
-    )
-    experiment.refers = kwargs.get(
-        "refers", {"parent_id": None, "root_id": None, "adapter": []}
-    )
-    experiment.refers["adapter"] = _instantiate_adapters(
-        experiment.refers.get("adapter", [])
-    )
+    producer = producer or {}
+    _instantiate_strategy(producer.get("strategy"))
+
+    metadata = metadata or {"user": user or getpass.getuser()}
+    experiment.metadata = metadata
+
+    refers = refers or RefersDict(parent_id=None, root_id=None, adapter=[])
+    adapter = refers.get("adapter") or []
+    adapter = experiment.refers.get("adapter", [])
+    adapter = _instantiate_adapters(adapter)
+    refers["adapter"] = adapter
+    experiment.refers = refers
 
     log.debug(
         "Created experiment with config:\n%s", pprint.pformat(experiment.configuration)
@@ -633,7 +665,7 @@ def _branch_experiment(experiment, conflicts, version, branching_arguments):
         name_conflict = conflicts.get([ExperimentNameConflict])[0]
         if not name_conflict.is_resolved and not version:
             log.debug(
-                "A race condition likely occured during conflicts resolutions. "
+                "A race condition likely occurred during conflicts resolutions. "
                 "Now rolling back and attempting re-building the branched experiment."
             )
             raise RaceCondition(
