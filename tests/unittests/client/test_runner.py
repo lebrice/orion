@@ -1,7 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Example usage and tests for :mod:`orion.client.experiment`."""
-import copy
 import os
 import signal
 import sys
@@ -10,7 +8,6 @@ import traceback
 from contextlib import contextmanager
 from multiprocessing import Process, Queue
 from threading import Thread
-from wsgiref.simple_server import sys_version
 
 import pytest
 
@@ -627,8 +624,7 @@ def test_runner_inside_subprocess():
     result = subprocess.run(
         ["python", f"{dir}/runner_subprocess.py", "--backend", "joblib"],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
 
     assert result.stderr.decode("utf-8") == ""

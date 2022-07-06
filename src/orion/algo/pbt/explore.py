@@ -55,8 +55,6 @@ class BaseExplore:
 
         """
 
-        pass
-
     @property
     def configuration(self):
         """Configuration of the exploit object"""
@@ -159,7 +157,7 @@ class PerturbExplore(BaseExplore):
     volatility: float, optional
         If the results of ``value * factor`` or ``value / factor`` exceeds the
         limit of the search space, the new value is set to limit and then added
-        or substracted ``abs(normal(0, volatility))`` (if at lower limit or upper limit).
+        or subtracted ``abs(normal(0, volatility))`` (if at lower limit or upper limit).
         Default: 0.0001
 
     Notes

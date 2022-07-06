@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 :mod:`orion.algo.gradient_descent` -- Perform gradient descent on a loss surface
 ================================================================================

@@ -14,10 +14,10 @@ import datetime
 import hashlib
 import logging
 import os
-import warnings
 import typing
+import warnings
 from dataclasses import dataclass
-from typing import Any, ClassVar, Iterable, Sequence, SupportsFloat
+from typing import Any, ClassVar, Iterable, SupportsFloat
 
 try:
     from typing import Literal
@@ -40,8 +40,6 @@ log = logging.getLogger(__name__)
 class AlreadyReleased(Exception):
     """Raised when a trial gets released twice"""
 
-    pass
-
 
 _Status = Literal["new", "reserved", "suspended", "completed", "interrupted", "broken"]
 
@@ -52,9 +50,7 @@ def validate_status(status: _Status | None) -> None:
     ``completed``, ``interrupted``, or ``broken``.
     """
     if status is not None and status not in Trial.allowed_stati:
-        raise ValueError(
-            "Given status `{0}` not one of: {1}".format(status, Trial.allowed_stati)
-        )
+        raise ValueError(f"Given status `{status}` not one of: {Trial.allowed_stati}")
 
 
 class Trial:
@@ -162,6 +158,20 @@ class Trial:
         def to_dict(self) -> dict[str, Any]:
             """Needed to be able to convert `Value` to `dict` form."""
             return dataclasses.asdict(self)
+
+        # TODO: Find a clean way to re-enable this perhaps.
+        # @property
+        # def type(self):
+        #     """For meaning of property type, see `Value.type`."""
+        #     return self._type
+
+        # @type.setter
+        # def type(self, type_):
+        #     if type_ is not None and type_ not in self.allowed_types:
+        #         raise ValueError(
+        #             f"Given type, {type_}, not one of: {self.allowed_types}"
+        #         )
+        #     self._type = type_
 
     @dataclass
     class Result(Value):
@@ -350,7 +360,7 @@ class Trial:
 
     def __str__(self):
         """Represent partially with a string."""
-        return "Trial(experiment={0}, status={1}, params={2})".format(
+        return "Trial(experiment={}, status={}, params={})".format(
             repr(self.experiment), repr(self._status), self.format_params(self._params)
         )
 
@@ -372,7 +382,7 @@ class Trial:
         objective = self._fetch_one_result_of_type("objective", results)
 
         if objective is None:
-            raise InvalidResult("No objective found in results: {}".format(results))
+            raise InvalidResult(f"No objective found in results: {results}")
         if not isinstance(objective.value, (float, int)):
             raise InvalidResult(
                 "Results must contain a type `objective` with type float/int: {}".format(

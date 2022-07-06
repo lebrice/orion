@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # pylint:disable=too-many-lines
 """
 Search space of optimization problems
@@ -24,7 +23,7 @@ defined by `orion.core` using the user script's configuration file.
 
 Prior distributions, contained in `Dimension` classes, are based on
 :scipy.stats:`distributions` and should be configured as noted in the
-scipy documentation for each specific implentation of a random variable type,
+scipy documentation for each specific implementation of a random variable type,
 unless noted otherwise!
 
 """
@@ -55,14 +54,13 @@ from orion.core.utils.flatten import flatten
 
 if typing.TYPE_CHECKING:
     from numbers import Number
-    from typing import Tuple
 
     from scipy.stats.distributions import rv_continuous, rv_discrete
 
+    from orion.core.worker.trial import Trial
+
     _SeedType = Union[int, numpy.random.RandomState, None]
     _ShapeType = Union[int, Tuple[int, ...], None]
-
-    from orion.core.worker.trial import Trial
 
 
 logger = logging.getLogger(__name__)
@@ -292,15 +290,15 @@ class Dimension(Generic[T]):
 
         for k, v in self._kwargs.items():
             if isinstance(v, str):
-                args += ["{}='{}'".format(k, v)]
+                args += [f"{k}='{v}'"]
             else:
-                args += ["{}={}".format(k, v)]
+                args += [f"{k}={v}"]
 
         if self._shape is not None:
-            args += ["shape={}".format(self._shape)]
+            args += [f"shape={self._shape}"]
 
         if self.default_value is not self.NO_DEFAULT_VALUE:
-            args += ["default_value={}".format(repr(self.default_value))]
+            args += [f"default_value={repr(self.default_value)}"]
 
         prior_name = self._prior_name
         if prior_name == "reciprocal":
@@ -315,7 +313,7 @@ class Dimension(Generic[T]):
 
     def get_string(self) -> str:
         """Build the string corresponding to current dimension"""
-        return "{name}~{prior}".format(name=self.name, prior=self.get_prior_string())
+        return f"{self.name}~{self.get_prior_string()}"
 
     @property
     def name(self) -> str | None:
@@ -500,7 +498,7 @@ class Real(Dimension):
                 break
             if not nice:
                 raise ValueError(
-                    "Improbable bounds: (low={0}, high={1}). "
+                    "Improbable bounds: (low={}, high={}). "
                     "Please make interval larger.".format(self._low, self._high)
                 )
 
@@ -539,8 +537,8 @@ class Real(Dimension):
 
             formated_number = numpy.zeros(precision)
             digits_list = float_to_digits_list(number)
-            lenght = min(len(digits_list), precision)
-            formated_number[:lenght] = digits_list[:lenght]
+            length = min(len(digits_list), precision)
+            formated_number[:length] = digits_list[:length]
 
             return formated_number
 
@@ -707,7 +705,7 @@ class Integer(Real, _Discrete):
     @property
     def prior_name(self) -> str:
         """Return the name of the prior"""
-        return "int_{}".format(super().prior_name)
+        return f"int_{super().prior_name}"
 
     @staticmethod
     def get_cardinality(shape: _ShapeType, interval: tuple[int, int]) -> int:
@@ -828,30 +826,30 @@ class Categorical(Dimension):
 
         prior = "{" + ", ".join(prior) + "}"
 
-        return "Categorical(name={0}, prior={1}, shape={2}, default value={3})".format(
+        return "Categorical(name={}, prior={}, shape={}, default value={})".format(
             self.name, prior, self.shape, self.default_value
         )
 
     def get_prior_string(self) -> str:
         """Build the string corresponding to current prior"""
         args = list(map(str, self._args[:]))
-        args += ["{}={}".format(k, v) for k, v in self._kwargs.items()]
+        args += [f"{k}={v}" for k, v in self._kwargs.items()]
         if self.default_value is not self.NO_DEFAULT_VALUE:
-            args += ["default_value={}".format(self.default_value)]
+            args += [f"default_value={self.default_value}"]
 
         cats = [repr(c) for c in self.categories]
         if all(p == self._probs[0] for p in self._probs):
             prior = "[{}]".format(", ".join(cats))
         else:
             probs = list(zip(cats, self._probs))
-            prior = "{" + ", ".join("{0}: {1:.2f}".format(c, p) for c, p in probs) + "}"
+            prior = "{" + ", ".join(f"{c}: {p:.2f}" for c, p in probs) + "}"
 
         args = [prior]
 
         if self._shape is not None:
-            args += ["shape={}".format(self._shape)]
+            args += [f"shape={self._shape}"]
         if self.default_value is not self.NO_DEFAULT_VALUE:
-            args += ["default_value={}".format(repr(self.default_value))]
+            args += [f"default_value={repr(self.default_value)}"]
 
         return "choices({args})".format(args=", ".join(args))
 
@@ -882,7 +880,7 @@ class Categorical(Dimension):
         def get_category(value: Any) -> Any:
             """Return category corresponding to a string else return singleton object"""
             if str(value) not in categorical_strings:
-                raise ValueError("Invalid category: {}".format(value))
+                raise ValueError(f"Invalid category: {value}")
 
             return categorical_strings[str(value)]
 
@@ -909,7 +907,7 @@ class Fidelity(Dimension):
     name : str
         Name of the dimension
     low: int
-        Mininum of the fidelity interval.
+        Minimum of the fidelity interval.
     high: int
         Maximum of the fidelity interval.
     base: int
@@ -987,7 +985,7 @@ class Fidelity(Dimension):
 
     def __repr__(self) -> str:
         """Represent the object as a string."""
-        return "{0}(name={1}, low={2}, high={3}, base={4})".format(
+        return "{}(name={}, low={}, high={}, base={})".format(
             self.__class__.__name__, self.name, self.low, self.high, self.base
         )
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Random sampler as optimization algorithm
 ========================================

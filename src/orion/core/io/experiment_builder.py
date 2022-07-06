@@ -9,7 +9,7 @@ configuration.
 The instantiation of an :class:`orion.core.worker.experiment.Experiment` is not a trivial process
 when the user request an experiment with specific options. One can easily create a new experiment
 with ``Experiment('some_experiment_name')``, but the configuration of a _writable_ experiment is
-less straighforward. This is because there is many sources of configuration and they have a strict
+less straightforward. This is because there is many sources of configuration and they have a strict
 hierarchy. From the more global to the more specific, there is:
 
 1. Global configuration:
@@ -83,7 +83,7 @@ import pprint
 import sys
 
 import orion.core
-import orion.core.utils.backward as backward
+import orion.core.utils.backward as backward  # pylint:disable=consider-using-from-import
 from orion.algo.base import BaseAlgorithm, algo_factory
 from orion.algo.space import Space
 from orion.core.evc.adapters import BaseAdapter
@@ -178,7 +178,7 @@ def build(name, version=None, branching=None, **config):
 
     if "space" not in config:
         raise NoConfigurationError(
-            "Experiment {} does not exist in DB and space was not defined.".format(name)
+            f"Experiment {name} does not exist in DB and space was not defined."
         )
 
     if len(config["space"]) == 0:
@@ -340,11 +340,11 @@ def load(name, version=None, mode="r"):
     db_config = fetch_config_from_db(name, version)
 
     if not db_config:
-        message = (
-            "No experiment with given name '%s' and version '%s' inside database, "
-            "no view can be created." % (name, version if version else "*")
+        raise NoConfigurationError(
+            f"No experiment with given name '{name}' "
+            f"and version '{version if version else '*'}' inside database, "
+            "no view can be created."
         )
-        raise NoConfigurationError(message)
 
     db_config.setdefault("version", 1)
 
@@ -633,7 +633,7 @@ def _branch_experiment(experiment, conflicts, version, branching_arguments):
         name_conflict = conflicts.get([ExperimentNameConflict])[0]
         if not name_conflict.is_resolved and not version:
             log.debug(
-                "A race condition likely occured during conflicts resolutions. "
+                "A race condition likely occurred during conflicts resolutions. "
                 "Now rolling back and attempting re-building the branched experiment."
             )
             raise RaceCondition(
@@ -702,7 +702,7 @@ def _fetch_config_version(configs, version=None):
 
     if version > max_version:
         log.warning(
-            "Version %s was specified but most recent version is only %s. " "Using %s.",
+            "Version %s was specified but most recent version is only %s. Using %s.",
             version,
             max_version,
             max_version,

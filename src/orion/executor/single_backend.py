@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Executor without parallelism for debugging
 ==========================================

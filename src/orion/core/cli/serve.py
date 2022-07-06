@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Web application endpoint
 ========================
@@ -12,7 +11,7 @@ import logging
 
 from gunicorn.app.base import BaseApplication
 
-import orion.core.io.experiment_builder as experiment_builder
+from orion.core.io import experiment_builder
 from orion.serving.webapi import WebApi
 
 log = logging.getLogger(__name__)
@@ -56,7 +55,6 @@ class GunicornApp(BaseApplication):
 
     def init(self, parser, opts, args):
         """Pre-run initialization"""
-        pass
 
     def load_config(self):
         """Load the gunicorn config"""

@@ -1,7 +1,5 @@
 import warnings
 
-import joblib
-
 from orion.executor.multiprocess_backend import PoolExecutor
 
 

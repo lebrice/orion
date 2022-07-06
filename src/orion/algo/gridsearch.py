@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import itertools
 import logging
-from typing import Sequence
 
 import numpy
 

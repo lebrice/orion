@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # pylint:disable=protected-access,too-many-public-methods,too-many-lines
 """
 Description of an optimization attempt
@@ -89,8 +88,8 @@ class Experiment:
     refers: dict or list of `Experiment` objects, after initialization is done.
        A dictionary pointing to a past `Experiment` id, ``refers[parent_id]``, whose
        trials we want to add in the history of completed trials we want to re-use.
-       For convenience and database effiency purpose, all experiments of a common tree shares
-       ``refers[root_id]``, with the root experiment refering to itself.
+       For the purpose of convenience and database efficiency, all experiments of a common tree
+       share a ``refers[root_id]``, with the root experiment referring to itself.
     version: int
         Current version of this experiment.
     metadata: dict
@@ -188,7 +187,7 @@ class Experiment:
 
     def __getstate__(self):
         """Remove storage instance during experiment serialization"""
-        state = dict()
+        state = {}
         for entry in self.__slots__:
             state[entry] = getattr(self, entry)
 
@@ -348,7 +347,7 @@ class Experiment:
             evc_pending_trials = self._storage.fetch_pending_trials(experiment=self)
         exp_pending_trials = self._storage.fetch_pending_trials(experiment=self)
 
-        exp_trials_ids = set(trial.id for trial in exp_pending_trials)
+        exp_trials_ids = {trial.id for trial in exp_pending_trials}
 
         for trial in evc_pending_trials:
             if trial.id in exp_trials_ids:
@@ -590,7 +589,7 @@ class Experiment:
     @property
     def configuration(self) -> dict[str, Any]:
         """Return a copy of an `Experiment` configuration as a dictionary."""
-        config = dict()
+        config = {}
         for attrname in self.__slots__:
             if attrname.startswith("_"):
                 continue
@@ -646,5 +645,7 @@ class Experiment:
 
     def __repr__(self) -> str:
         """Represent the object as a string."""
-        user_str = self.metadata.get("user", "n/a")
-        return f"Experiment(name={self.name}, metadata.user={user_str}, version={self.version})"
+        return (
+            f"Experiment(name={self.name}, metadata.user={self.metadata.get('user', 'n/a')}, "
+            f"version={self.version})"
+        )

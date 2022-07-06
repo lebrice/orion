@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 WSGI REST server application
 ============================
@@ -57,7 +56,7 @@ class MyCORSMiddleware(CORSMiddleware):
         super().process_resource(req, resp, resource, *args)
 
         # We then verify if some access control headers were added to response.
-        # If not, reponse is not allowed.
+        # If not, response is not allowed.
         # Special case: if request did not have an origin, it was certainly sent from
         # a browser (ie. not another server), so CORS is not relevant.
         cors_resp_headers_after = [
@@ -144,8 +143,6 @@ class WebApi(falcon.API):
 
     def start(self):
         """A hook to when a Gunicorn worker calls run()."""
-        pass
 
     def stop(self, signal):
         """A hook to when a Gunicorn worker starts shutting down."""
-        pass

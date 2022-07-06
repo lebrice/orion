@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Singleton helpers and boilerplate
 =================================
@@ -17,9 +16,7 @@ class SingletonAlreadyInstantiatedError(ValueError):
     def __init__(self, name):
         """Pass the same constant message to ValueError underneath."""
         super().__init__(
-            "A singleton instance of (type: {}) has already been instantiated.".format(
-                name
-            )
+            f"A singleton instance of (type: {name}) has already been instantiated."
         )
 
 
@@ -30,7 +27,7 @@ class SingletonNotInstantiatedError(TypeError):
 
     def __init__(self, name):
         """Pass the same constant message to TypeError underneath."""
-        super().__init__("No singleton instance of (type: {}) was created".format(name))
+        super().__init__(f"No singleton instance of (type: {name}) was created")
 
 
 class SingletonType(type):
@@ -58,14 +55,10 @@ class SingletonType(type):
 class AbstractSingletonType(SingletonType, ABCMeta):
     """This will create singleton base classes, that need to be subclassed and implemented."""
 
-    pass
-
 
 class SingletonFactory(AbstractSingletonType, Factory):
     """Wrapping `orion.core.utils.Factory` with `SingletonType`. Keep compatibility with
     `AbstractSingletonType`."""
-
-    pass
 
 
 def update_singletons(values=None):

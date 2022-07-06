@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Task for RosenBrock Function
 ==============================
@@ -26,6 +25,6 @@ class RosenBrock(BenchmarkTask):
 
     def get_search_space(self):
         """Return the search space for the task objective function"""
-        rspace = {"x": "uniform(-5, 10, shape={})".format(self.dim)}
+        rspace = {"x": f"uniform(-5, 10, shape={self.dim})"}
 
         return rspace
