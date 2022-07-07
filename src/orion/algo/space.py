@@ -66,14 +66,12 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def check_random_state(
-    seed: _SeedType,
-) -> numpy.random.RandomState:
+def check_random_state(seed: _SeedType) -> numpy.random.RandomState:
     """Return numpy global rng or RandomState if seed is specified"""
     if seed is None or seed is numpy.random:
         rng = (
-            numpy.random.mtrand._rand
-        )  # pylint:disable=protected-access,c-extension-no-member
+            numpy.random.mtrand._rand  # pylint:disable=protected-access,c-extension-no-member
+        )
     elif isinstance(seed, numpy.random.RandomState):
         rng = seed
     else:
@@ -81,8 +79,7 @@ def check_random_state(
             rng = numpy.random.RandomState(seed)
         except Exception as e:
             raise ValueError(
-                "%r cannot be used to seed a numpy.random.RandomState"
-                " instance" % seed
+                f"{seed} cannot be used to seed a numpy.random.RandomState instance"
             ) from e
 
     return rng
@@ -118,7 +115,11 @@ class Dimension(Generic[T]):
     NO_DEFAULT_VALUE = None
 
     def __init__(
-        self, name: str, prior: str | rv_discrete | rv_continuous, *args, **kwargs
+        self,
+        name: str,
+        prior: str | rv_discrete | rv_continuous | None,
+        *args,
+        **kwargs,
     ):
         """Init code which is common for `Dimension` subclasses.
 
@@ -143,7 +144,7 @@ class Dimension(Generic[T]):
         """
         self._name = None
         self.name = name
-        self.prior: rv_discrete | rv_continuous | None = None
+        self.prior: rv_discrete | rv_continuous | None
         if isinstance(prior, str):
             self._prior_name = prior
             self.prior = getattr(distributions, prior)
@@ -179,8 +180,8 @@ class Dimension(Generic[T]):
             and self.default_value not in self
         ):
             raise ValueError(
-                "{} is not a valid value for this Dimension. "
-                "Can't set default value.".format(self.default_value)
+                f"{self.default_value} is not a valid value for this Dimension. "
+                "Can't set default value."
             )
 
     def _get_hashable_members(self) -> tuple[Hashable, ...]:
@@ -229,6 +230,7 @@ class Dimension(Generic[T]):
            across many samples.
 
         """
+        assert self.prior
         samples = [
             self.prior.rvs(
                 *self._args, size=self.shape, random_state=seed, **self._kwargs
@@ -253,6 +255,7 @@ class Dimension(Generic[T]):
         a variable is `alpha`-likely to be drawn from.
 
         """
+        assert self.prior
         return self.prior.interval(alpha, *self._args, **self._kwargs)
 
     def __contains__(self, point: Any) -> bool:
@@ -353,7 +356,7 @@ class Dimension(Generic[T]):
         # `scipy.stats._distn_infrastructure.rv_generic._argcheck_rvs`
         if self.prior is None:
             return None
-
+        assert self.prior
         _, _, _, size = self.prior._parse_args_rvs(
             *self._args,  # pylint:disable=protected-access
             size=self._shape,
@@ -498,8 +501,8 @@ class Real(Dimension):
                 break
             if not nice:
                 raise ValueError(
-                    "Improbable bounds: (low={}, high={}). "
-                    "Please make interval larger.".format(self._low, self._high)
+                    f"Improbable bounds: (low={self._low}, high={self._high}). "
+                    f"Please make interval larger."
                 )
 
         return samples
@@ -998,18 +1001,35 @@ class Fidelity(Dimension):
         return self.low <= value <= self.high
 
 
-class Space(Dict[str, Dimension]):
+DimensionT = TypeVar("DimensionT", bound=Dimension)
+
+
+class Space(Dict[str, DimensionT]):
     """Represents the search space.
 
     It is a sorted dictionary which contains `Dimension` objects.
     The dimensions are sorted based on their names.
     """
 
+    def __init__(self, *args: tuple[str, DimensionT], **kwargs: DimensionT):
+        name_to_dim = {}
+        for name, dim in args:
+            if name in name_to_dim:
+                raise ValueError(f"Duplicate dimension: {name}")
+            name_to_dim[name] = dim
+        for name, dim in kwargs.items():
+            if name in name_to_dim:
+                raise ValueError(f"Duplicate dimension: {name}")
+            name_to_dim[name] = dim
+        super().__init__(name_to_dim)
+
     contains = Dimension
 
-    def register(self, dimension: Dimension) -> None:
+    def register(self, dimension) -> None:
         """Register a new dimension to `Space`."""
-        self[dimension.name] = dimension
+        name = dimension.name
+        assert name is not None
+        self[name] = dimension
 
     def sample(self, n_samples: int = 1, seed: _SeedType = None) -> list[Trial]:
         """Draw random samples from this space.
@@ -1049,7 +1069,7 @@ class Space(Dict[str, Dimension]):
                 res.append(dim.interval(alpha))
         return res
 
-    def __getitem__(self, key: str | int) -> Dimension:
+    def __getitem__(self, key: str | int) -> DimensionT:
         """Wrap __getitem__ to allow searching with position."""
         if isinstance(key, str):
             return super().__getitem__(key)
@@ -1057,26 +1077,24 @@ class Space(Dict[str, Dimension]):
         values = list(self.values())
         return values[key]
 
-    def __setitem__(self, key: str | int, value: Dimension) -> None:
+    def __setitem__(self, key: str | int, value: DimensionT) -> None:
         """Wrap __setitem__ to allow only ``Space.contains`` class, e.g. `Dimension`,
         values and string keys.
         """
         if not isinstance(key, str):
             raise TypeError(
-                "Keys registered to {} must be string types. "
-                "Provided: {}".format(self.__class__.__name__, key)
+                f"Keys registered to {type(self).__qualname__} must be string types. "
+                f"Provided: {key}"
             )
         if not isinstance(value, self.contains):
             raise TypeError(
-                "Values registered to {} must be {} types. "
-                "Provided: {}".format(
-                    self.__class__.__name__, self.contains.__name__, value
-                )
+                f"Values registered to {type(self).__qualname__} must be {self.contains.__qualname__} types. "
+                f"Provided: {value}"
             )
         if key in self:
             raise ValueError(
-                "There is already a Dimension registered with this name. "
-                "Register it with another name. Provided: {}".format(key)
+                f"There is already a Dimension registered with this name. "
+                f"Register it with another name. Provided: {key}"
             )
         super().__setitem__(key, value)
 
@@ -1106,14 +1124,18 @@ class Space(Dict[str, Dimension]):
 
     def __repr__(self) -> str:
         """Represent as a string the space and the dimensions it contains."""
-        dims = list(self.values())
-        return "Space([{}])".format(",\n       ".join(map(str, dims)))
+        return (
+            type(self).__qualname__
+            + "("
+            + ", ".join(f"{name}: {dimension}" for name, dimension in self.items())
+            + ")"
+        )
 
-    def items(self) -> list[tuple[str, Dimension]]:
+    def items(self) -> list[tuple[str, DimensionT]]:
         """Return items sorted according to keys"""
         return [(k, self[k]) for k in self.keys()]
 
-    def values(self) -> list[Dimension]:
+    def values(self) -> list[DimensionT]:
         """Return values sorted according to keys"""
         return [self[k] for k in self.keys()]
 
