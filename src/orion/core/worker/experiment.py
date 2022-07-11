@@ -62,6 +62,8 @@ class ExperimentStats:
 
 
 class RefersDict(TypedDict, total=False):
+    """A dictionary containing the lineage information of an experiment."""
+
     root_id: int | str | None
     parent_id: int | str | None
     adapter: list | BaseAdapter
@@ -110,7 +112,7 @@ class Experiment:
     id: object
        id of the experiment in the database if experiment is configured. Value is ``None``
        if the experiment is not configured.
-    refers: dict or list of `Experiment` objects, after initialization is done.
+    refers: RefersDict
        A dictionary pointing to a past `Experiment` id, ``refers[parent_id]``, whose
        trials we want to add in the history of completed trials we want to re-use.
        For the purpose of convenience and database efficiency, all experiments of a common tree
