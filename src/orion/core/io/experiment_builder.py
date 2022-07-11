@@ -99,7 +99,11 @@ from orion.core.utils.exceptions import (
     NoNameError,
     RaceCondition,
 )
+<<<<<<< HEAD
 from orion.core.worker.experiment import Experiment, Mode
+=======
+from orion.core.worker.experiment import Experiment, MetaDataDict, Mode, RefersDict
+>>>>>>> Make construction of Experiments more explicit
 from orion.core.worker.primary_algo import create_algo
 from orion.storage.base import get_storage, setup_storage
 
@@ -396,14 +400,13 @@ def create_experiment(
         config=algo_config,
         ignore_unavailable=mode != "x",
     )
-    metadata = kwargs.pop("metadata", {"user": kwargs.pop("user", getpass.getuser())})
-    refers: dict = kwargs.pop(
+    metadata: MetaDataDict = kwargs.pop(
+        "metadata", {"user": kwargs.pop("user", getpass.getuser())}
+    )
+    refers: RefersDict = kwargs.pop(
         "refers", {"parent_id": None, "root_id": None, "adapter": []}
     )
     refers["adapter"] = _instantiate_adapters(refers.get("adapter", []))
-    # TODO: Remove for v0.4
-    strategy_config: dict | None = kwargs.pop("producer", {}).get("strategy")
-    _instantiate_strategy(strategy_config)
     experiment = Experiment(
         name=name,
         version=version,

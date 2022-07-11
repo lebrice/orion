@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 
 import pandas
-from typing_extensions import Literal
+from typing_extensions import Literal, TypedDict
 
 from orion.algo.base import BaseAlgorithm
 from orion.algo.space import Space
@@ -56,9 +56,47 @@ class ExperimentStats:
     trials_completed: int
     best_trials_id: int
     best_evaluation: float
-    start_time: datetime.datetime = field(default_factory=datetime.datetime)
-    finish_time: datetime.datetime = field(default_factory=datetime.datetime)
+    start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
+    finish_time: datetime.datetime = field(default_factory=datetime.datetime.now)
     duration: datetime.timedelta = field(default_factory=datetime.timedelta)
+
+
+class RefersDict(TypedDict, total=False):
+    root_id: int | str | None
+    parent_id: int | str | None
+    adapter: list | BaseAdapter
+
+
+class MetaDataDict(TypedDict, total=False):
+    """Experiment metadata."""
+
+    user: str
+    """ System user currently owning this running process, the one who invoked **Oríon**. """
+
+    datetime: datetime.datetime
+    """ When was this particular configuration submitted to the database. """
+
+    orion_version: str
+    """ Version of **Oríon** which suggested this experiment. `user`'s current **Oríon** version.
+    """
+
+    user_script: str
+    """ Full absolute path to `user`'s executable. """
+
+    user_args: list[str]
+    """
+    Contains separate arguments to be passed when invoking `user_script`, possibly templated for
+    **Oríon**.
+    """
+
+    user_vcs: str
+    """ User's version control system for this executable's code repository."""
+
+    user_version: str
+    """Current user's repository version. """
+
+    user_commit_hash: str
+    """Current `Experiment`'s commit hash for **Oríon**'s invocation."""
 
 
 # pylint: disable=too-many-public-methods
@@ -151,8 +189,8 @@ class Experiment:
         max_broken: int | None = None,
         algorithms: BaseAlgorithm | None = None,
         working_dir: str | None = None,
-        metadata: dict | None = None,
-        refers: dict | None = None,
+        metadata: MetaDataDict | None = None,
+        refers: RefersDict | None = None,
     ):
         self._id = _id
         self.name = name
@@ -161,8 +199,8 @@ class Experiment:
         )
         self.version = version if version else 1
         self._mode = mode
-        self.refers = refers or {}
-        self.metadata = metadata or {}
+        self.refers: RefersDict = refers or {}
+        self.metadata: MetaDataDict = metadata or {}
         self.max_trials = max_trials
         self.max_broken = max_broken
 
@@ -170,6 +208,7 @@ class Experiment:
         self.working_dir = working_dir
 
         self._storage = get_storage()
+        self._node = None
         self._node = ExperimentNode(self.name, self.version, experiment=self)
 
     def _check_if_writable(self):
