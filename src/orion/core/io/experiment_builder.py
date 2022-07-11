@@ -407,6 +407,9 @@ def create_experiment(
         "refers", {"parent_id": None, "root_id": None, "adapter": []}
     )
     refers["adapter"] = _instantiate_adapters(refers.get("adapter", []))
+    # TODO: Remove for v0.4
+    strategy_config: dict | None = kwargs.pop("producer", {}).get("strategy")
+    _instantiate_strategy(strategy_config)
     experiment = Experiment(
         name=name,
         version=version,
