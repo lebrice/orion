@@ -81,6 +81,8 @@ import getpass
 import logging
 import pprint
 import sys
+import warnings
+from typing import TypeVar
 
 from typing_extensions import TypedDict
 
@@ -101,11 +103,7 @@ from orion.core.utils.exceptions import (
     NoNameError,
     RaceCondition,
 )
-<<<<<<< HEAD
-from orion.core.worker.experiment import Experiment, Mode
-=======
 from orion.core.worker.experiment import Experiment, MetaDataDict, Mode, RefersDict
->>>>>>> Make construction of Experiments more explicit
 from orion.core.worker.primary_algo import create_algo
 from orion.storage.base import get_storage, setup_storage
 
@@ -380,7 +378,20 @@ def load(name: str, version: int | None = None, mode: Mode = "r"):
 
 
 def create_experiment(
-    name: str, version: int, mode: Mode, space: Space | dict[str, str], **kwargs
+    name: str,
+    version: int,
+    mode: Mode,
+    space: Space | dict[str, str],
+    algorithms: str | dict | None = None,
+    max_trials: int | None = None,
+    max_broken: int | None = None,
+    working_dir: str | None = None,
+    metadata: MetaDataDict | None = None,
+    refers: RefersDict | None = None,
+    producer: dict | None = None,
+    user: str | None = None,
+    _id: int | str | None = None,
+    **kwargs,
 ) -> Experiment:
     """Instantiate the experiment and its attribute objects
 
@@ -413,27 +424,34 @@ def create_experiment(
 
     """
     space = _instantiate_space(space)
-    _id = kwargs.get("_id", None)
-    max_trials = kwargs.pop("max_trials", orion.core.config.experiment.max_trials)
-    max_broken = kwargs.pop("max_broken", orion.core.config.experiment.max_broken)
-    working_dir = kwargs.pop("working_dir", orion.core.config.experiment.working_dir)
-    algo_config = kwargs.pop("algorithms", None)
-    algorithms = _instantiate_algo(
+
+    T = TypeVar("T")
+    V = TypeVar("V")
+
+    def _default(v: T | None, default: V) -> T | V:
+        return v if v is not None else default
+
+    default_metadata = MetaDataDict(user=_default(user, getpass.getuser()))
+    default_refers = RefersDict(parent_id=None, root_id=None, adapter=[])
+
+    max_trials = _default(max_trials, orion.core.config.experiment.max_trials)
+    max_broken = _default(max_broken, orion.core.config.experiment.max_broken)
+    working_dir = _default(working_dir, orion.core.config.experiment.working_dir)
+    metadata = _default(metadata, default_metadata)
+    refers = _default(refers, default_refers)
+    refers["adapter"] = _instantiate_adapters(refers.get("adapter", []))
+
+    instantiated_algorithm = _instantiate_algo(
         space=space,
         max_trials=max_trials,
-        config=algo_config,
+        config=algorithms,
         ignore_unavailable=mode != "x",
     )
-    metadata: MetaDataDict = kwargs.pop(
-        "metadata", {"user": kwargs.pop("user", getpass.getuser())}
-    )
-    refers: RefersDict = kwargs.pop(
-        "refers", {"parent_id": None, "root_id": None, "adapter": []}
-    )
-    refers["adapter"] = _instantiate_adapters(refers.get("adapter", []))
+
     # TODO: Remove for v0.4
-    strategy_config: dict | None = kwargs.pop("producer", {}).get("strategy")
+    strategy_config: dict | None = (producer or {}).get("strategy")
     _instantiate_strategy(strategy_config)
+
     experiment = Experiment(
         name=name,
         version=version,
@@ -442,7 +460,7 @@ def create_experiment(
         _id=_id,
         max_trials=max_trials,
         max_broken=max_broken,
-        algorithms=algorithms,
+        algorithms=instantiated_algorithm,
         working_dir=working_dir,
         metadata=metadata,
         refers=refers,
@@ -450,6 +468,12 @@ def create_experiment(
     log.debug(
         "Created experiment with config:\n%s", pprint.pformat(experiment.configuration)
     )
+    if kwargs:
+        warnings.warn(
+            UserWarning(
+                f"create_experiment received some extra unused arguments: {kwargs}"
+            )
+        )
 
     return experiment
 
