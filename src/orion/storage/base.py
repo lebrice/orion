@@ -19,13 +19,19 @@ When retrieving an already initialized Storage object you should use `get_storag
 raises more granular error messages.
 
 """
+from __future__ import annotations
+
 import contextlib
 import copy
 import logging
+import typing
 
 import orion.core
 from orion.core.io import resolve_config
 from orion.core.utils.singleton import GenericSingletonFactory
+
+if typing.TYPE_CHECKING:
+    from orion.core.worker.experiment import Experiment
 
 log = logging.getLogger(__name__)
 
@@ -197,7 +203,13 @@ class BaseStorageProtocol:
         """
         raise NotImplementedError()
 
-    def update_experiment(self, experiment=None, uid=None, where=None, **kwargs):
+    def update_experiment(
+        self,
+        experiment: Experiment | None = None,
+        uid: str | None = None,
+        where: dict | None = None,
+        **kwargs,
+    ) -> bool:
         """Update the fields of a given experiment
 
         Parameters

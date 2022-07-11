@@ -3,11 +3,14 @@ Configuration parsing and resolving
 ===================================
 
 """
+from __future__ import annotations
+
 import copy
 import getpass
 import hashlib
 import logging
 import os
+import typing
 
 import git
 import yaml
@@ -17,6 +20,9 @@ import orion
 import orion.core
 from orion.core.io.orion_cmdline_parser import OrionCmdlineParser
 from orion.core.utils.flatten import unflatten
+
+if typing.TYPE_CHECKING:
+    from orion.core.worker.experiment import MetaDataDict
 
 
 def is_exe(path):
@@ -298,7 +304,7 @@ def fetch_metadata(user=None, user_args=None, user_script_config=None):
     return metadata
 
 
-def update_metadata(metadata):
+def update_metadata(metadata: MetaDataDict) -> MetaDataDict:
     """Update information about the process + versioning"""
     metadata.setdefault("user", getpass.getuser())
     metadata["orion_version"] = orion.core.__version__

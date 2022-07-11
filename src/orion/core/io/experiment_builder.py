@@ -82,6 +82,8 @@ import logging
 import pprint
 import sys
 
+from typing_extensions import TypedDict
+
 import orion.core
 import orion.core.utils.backward as backward  # pylint:disable=consider-using-from-import
 from orion.algo.base import BaseAlgorithm, algo_factory
@@ -115,7 +117,54 @@ log = logging.getLogger(__name__)
 ##
 
 
-def build(name, version=None, branching=None, **config):
+class BranchingDict(TypedDict, total=False):
+    """Arguments to control the branching."""
+
+    branch_from: str
+    """ Name of the experiment to branch from. """
+
+    manual_resolution: bool
+    """ Starts the prompt to resolve manually the conflicts. Defaults to False. """
+
+    non_monitored_arguments: list[str]
+    """ Will ignore these arguments while looking for differences. Defaults to []. """
+
+    ignore_code_changes: bool
+    """ Will ignore code changes while looking for differences. Defaults to False. """
+
+    algorithm_change: bool
+    """ Whether to automatically solve the algorithm conflict (change of algo config). Defaults to
+    True.
+    """
+
+    orion_version_change: bool
+    """ Whether to automatically solve the orion version conflict. Defaults to True. """
+
+    code_change_type: str
+    """ How to resolve code change automatically. Must be one of 'noeffect', 'unsure' or 'break'.
+    Defaults to 'break'.
+    """
+
+    cli_change_type: str
+    """ How to resolve cli change automatically. Must be one of 'noeffect', 'unsure' or 'break'.
+        Defaults to 'break'.
+    """
+
+    config_change_type: str
+    """How to resolve config change automatically. Must be one of 'noeffect', 'unsure' or
+        'break'.  Defaults to 'break'.
+    """
+
+    branch_to: str
+    """ Name of the experiment to branch to. Note: This appears to be set by Orion. """
+
+
+def build(
+    name: str,
+    version: int | None = None,
+    branching: BranchingDict | None = None,
+    **config,
+):
     """Build an experiment object
 
     If new, ``space`` argument must be provided, else all arguments are fetched from the database
@@ -144,38 +193,13 @@ def build(name, version=None, branching=None, **config):
     storage: dict, optional
         Configuration of the storage backend.
 
-    branching: dict, optional
-        Arguments to control the branching.
-
-        branch_from: str, optional
-            Name of the experiment to branch from.
-        manual_resolution: bool, optional
-            Starts the prompt to resolve manually the conflicts. Defaults to False.
-        non_monitored_arguments: list of str, optional
-            Will ignore these arguments while looking for differences. Defaults to [].
-        ignore_code_changes: bool, optional
-            Will ignore code changes while looking for differences. Defaults to False.
-        algorithm_change: bool, optional
-            Whether to automatically solve the algorithm conflict (change of algo config).
-            Defaults to True.
-        orion_version_change: bool, optional
-            Whether to automatically solve the orion version conflict.
-            Defaults to True.
-        code_change_type: str, optional
-            How to resolve code change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
-        cli_change_type: str, optional
-            How to resolve cli change automatically. Must be one of 'noeffect', 'unsure' or 'break'.
-            Defaults to 'break'.
-        config_change_type: str, optional
-            How to resolve config change automatically. Must be one of 'noeffect', 'unsure' or
-            'break'.  Defaults to 'break'.
+    branching: BranchingDict, optional
+        Arguments to control the branching. See `BranchingDict` for more information.
 
     """
     log.debug(f"Building experiment {name} with {version}")
     log.debug("    Passed experiment config:\n%s", pprint.pformat(config))
     log.debug("    Branching config:\n%s", pprint.pformat(branching))
-
     name, config, branching = clean_config(name, config, branching)
 
     config = consolidate_config(name, version, config)
@@ -222,7 +246,7 @@ def build(name, version=None, branching=None, **config):
     return experiment
 
 
-def clean_config(name, config, branching):
+def clean_config(name: str, config: dict, branching: BranchingDict | None):
     """Clean configuration from hidden fields (ex: ``_id``) and update branching if necessary"""
     log.debug("Cleaning config")
 
@@ -239,7 +263,7 @@ def clean_config(name, config, branching):
     if branching is None:
         branching = {}
 
-    if branching.get("branch_from"):
+    if "branch_from" in branching and branching["branch_from"]:
         branching.setdefault("branch_to", name)
         name = branching["branch_from"]
 
@@ -579,7 +603,7 @@ def _register_experiment(experiment):
         )
 
 
-def _update_experiment(experiment):
+def _update_experiment(experiment: Experiment) -> None:
     """Update experiment configuration in database"""
     log.debug("Updating experiment (name: %s)", experiment.name)
     config = experiment.configuration

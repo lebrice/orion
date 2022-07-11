@@ -5,11 +5,14 @@ Legacy storage
 Old Storage implementation.
 
 """
+from __future__ import annotations
+
 import contextlib
 import datetime
 import logging
 import pickle
 import time
+import typing
 
 import orion.core
 import orion.core.utils.backward as backward
@@ -23,6 +26,9 @@ from orion.storage.base import (
     get_trial_uid_and_exp,
     get_uid,
 )
+
+if typing.TYPE_CHECKING:
+    from orion.core.worker.experiment import Experiment
 
 log = logging.getLogger(__name__)
 
@@ -145,7 +151,13 @@ class Legacy(BaseStorageProtocol):
         uid = get_uid(experiment, uid)
         return self._db.remove("experiments", query={"_id": uid})
 
-    def update_experiment(self, experiment=None, uid=None, where=None, **kwargs):
+    def update_experiment(
+        self,
+        experiment: Experiment | None = None,
+        uid: str | None = None,
+        where: dict | None = None,
+        **kwargs,
+    ) -> bool:
         """See :func:`orion.storage.base.BaseStorageProtocol.update_experiment`"""
         uid = get_uid(experiment, uid)
 

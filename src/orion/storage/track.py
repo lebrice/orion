@@ -5,12 +5,14 @@ Track Storage Protocol
 Implement a storage protocol to allow Orion to use track as a storage method.
 
 """
+from __future__ import annotations
 
 import copy
 import datetime
 import hashlib
 import logging
 import sys
+import typing
 from collections import defaultdict
 
 import orion.core
@@ -20,6 +22,8 @@ from orion.core.worker.trial import Trial as OrionTrial
 from orion.core.worker.trial import validate_status
 from orion.storage.base import BaseStorageProtocol, FailedUpdate, get_uid
 
+if typing.TYPE_CHECKING:
+    from orion.core.worker.experiment import Experiment
 log = logging.getLogger(__name__)
 
 
@@ -408,7 +412,13 @@ class Track(BaseStorageProtocol):  # noqa: F811
         config["_id"] = self.group.uid
         return config
 
-    def update_experiment(self, experiment=None, uid=None, where=None, **kwargs):
+    def update_experiment(
+        self,
+        experiment: Experiment | None = None,
+        uid: str | None = None,
+        where: dict | None = None,
+        **kwargs,
+    ) -> bool:
         """See :meth:`orion.storage.base.BaseStorageProtocol.update_experiment`"""
         uid = get_uid(experiment, uid)
 
