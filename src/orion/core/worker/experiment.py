@@ -117,8 +117,9 @@ class Experiment:
        share a ``refers[root_id]``, with the root experiment referring to itself.
     version: int
         Current version of this experiment.
-    metadata: dict
-       Contains managerial information about this `Experiment`.
+    metadata: MetaDataDict
+       Contains managerial information about this `Experiment`. See the `MetaDataDict` class for
+       more info on the different arguments.
     max_trials: int
        How many trials must be evaluated, before considering this `Experiment` done.
        This attribute can be updated if the rest of the experiment configuration
@@ -134,31 +135,6 @@ class Experiment:
     algorithms: `BaseAlgorithm` object or a wrapper.
        Complete specification of the optimization and dynamical procedures taking
        place in this `Experiment`.
-
-    Notes
-    -----
-
-    The following list represents possible entries in the metadata dict.
-
-    user: str
-       System user currently owning this running process, the one who invoked **Oríon**.
-    datetime: `datetime.datetime`
-       When was this particular configuration submitted to the database.
-    orion_version: str
-       Version of **Oríon** which suggested this experiment. `user`'s current
-       **Oríon** version.
-    user_script: str
-       Full absolute path to `user`'s executable.
-    user_args: list of str
-       Contains separate arguments to be passed when invoking `user_script`,
-       possibly templated for **Oríon**.
-    user_vcs: str, optional
-       User's version control system for this executable's code repository.
-    user_version: str, optional
-       Current user's repository version.
-    user_commit_hash: str, optional
-       Current `Experiment`'s commit hash for **Oríon**'s invocation.
-
     """
 
     __slots__ = (
