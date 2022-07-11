@@ -184,7 +184,6 @@ class Experiment:
         self.working_dir = working_dir
 
         self._storage = get_storage()
-        self._node = None
         self._node = ExperimentNode(self.name, self.version, experiment=self)
 
     def _check_if_writable(self):
