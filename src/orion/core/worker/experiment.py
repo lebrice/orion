@@ -153,6 +153,7 @@ class Experiment:
         working_dir: str | None = None,
         metadata: dict | None = None,
         refers: dict | None = None,
+        storage: dict | None = None,
     ):
         self._id = _id
         self.name = name
@@ -166,8 +167,8 @@ class Experiment:
 
         self.algorithms = algorithms
         self.working_dir = working_dir
-
-        self._storage = get_storage()
+        # TODO: Adapt once we remove the singletons
+        self._storage = storage or get_storage()
         self._node = ExperimentNode(self.name, self.version, experiment=self)
 
     def _check_if_writable(self):

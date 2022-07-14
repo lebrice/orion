@@ -81,7 +81,6 @@ import getpass
 import logging
 import pprint
 import sys
-import warnings
 from typing import TypeVar
 
 import orion.core
@@ -370,8 +369,8 @@ def create_experiment(
     refers: dict | None = None,
     producer: dict | None = None,
     user: str | None = None,
+    storage: dict | None = None,
     _id: int | str | None = None,
-    **kwargs,
 ) -> Experiment:
     """Instantiate the experiment and its attribute objects
 
@@ -440,17 +439,11 @@ def create_experiment(
         working_dir=working_dir,
         metadata=metadata,
         refers=refers,
+        storage=storage,
     )
     log.debug(
         "Created experiment with config:\n%s", pprint.pformat(experiment.configuration)
     )
-    if kwargs:
-        warnings.warn(
-            UserWarning(
-                f"create_experiment received some extra unused arguments: {kwargs}"
-            )
-        )
-
     return experiment
 
 

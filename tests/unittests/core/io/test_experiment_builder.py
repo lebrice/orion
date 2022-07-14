@@ -69,7 +69,6 @@ def python_api_config():
             }
         },
         _id="fasdfasfa",
-        something_to_be_ignored="asdfa",
         refers=dict(root_id="supernaekei", parent_id=None, adapter=[]),
     )
 
@@ -118,8 +117,6 @@ def new_config(random_dt, script_path):
         },
         # attrs starting with '_' also
         _id="fasdfasfa",
-        # and in general anything which is not in Experiment's slots
-        something_to_be_ignored="asdfa",
         refers=dict(root_id="supernaekei", parent_id=None, adapter=[]),
     )
 
@@ -702,7 +699,6 @@ class TestBuild:
         new_config["algorithms"]["dumbalgo"]["suspend"] = False
         new_config["algorithms"]["dumbalgo"]["value"] = 5
         new_config["algorithms"]["dumbalgo"]["seed"] = None
-        new_config.pop("something_to_be_ignored")
         assert exp.configuration == new_config
 
     @pytest.mark.usefixtures("mock_infer_versioning_metadata")
@@ -724,7 +720,6 @@ class TestBuild:
         assert exp._id == _id
         new_config["refers"] = {}
         new_config.pop("_id")
-        new_config.pop("something_to_be_ignored")
         new_config["algorithms"]["dumbalgo"]["done"] = False
         new_config["algorithms"]["dumbalgo"]["judgement"] = None
         new_config["algorithms"]["dumbalgo"]["scoring"] = 0
@@ -792,7 +787,6 @@ class TestBuild:
         new_config["algorithms"]["dumbalgo"]["suspend"] = False
         new_config["algorithms"]["dumbalgo"]["value"] = 5
         new_config["algorithms"]["dumbalgo"]["seed"] = None
-        new_config.pop("something_to_be_ignored")
         assert exp.configuration == new_config
 
     def test_instantiation_after_init(self, new_config):
